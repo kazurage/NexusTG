@@ -8,6 +8,7 @@ import math
 import json
 import asyncio
 import sys
+import webbrowser
 
 # Добавляем текущую директорию в путь, чтобы импорты работали корректно
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -53,6 +54,13 @@ class NexusTGApp(ctk.CTk):
         # Initialize configuration variables
         self.bot_token = ""
         self.owner_ids = []
+        
+        # История логов
+        self.log_history = []
+        self.bot_info = None
+        
+        # Состояние бота (True=работает, False=остановлен)
+        self.bot_is_running = True
         
         # Bind window resize event
         self.bind("<Configure>", self.on_window_resize)
@@ -380,36 +388,192 @@ class NexusTGApp(ctk.CTk):
         """Show error message"""
         error_window = ctk.CTkToplevel(self)
         error_window.title("Ошибка")
-        error_window.geometry("350x150")
-        error_window.resizable(False, False)
+        error_window.geometry("540x380")  # Увеличиваем размер окна
+        error_window.resizable(True, True)  # Разрешаем изменять размер
         error_window.configure(fg_color=self.dark_bg)
+        error_window.after(10, lambda: error_window.focus_force())  # Фокус на окне
         
-        error_frame = ctk.CTkFrame(error_window, fg_color="transparent")
-        error_frame.pack(expand=True, fill="both", padx=20, pady=20)
+        # Добавляем отступы по краям
+        main_container = ctk.CTkFrame(error_window, fg_color="transparent")
+        main_container.pack(fill="both", expand=True, padx=20, pady=20)
         
-        error_label = ctk.CTkLabel(error_frame, text="⚠️ Ошибка", 
+        # Верхняя секция с заголовком и иконкой в стильном контейнере
+        header_frame = ctk.CTkFrame(main_container, corner_radius=10, fg_color="#262D3A", height=60)
+        header_frame.pack(fill="x", pady=(0, 15))
+        
+        # Внутренний контейнер для содержимого заголовка с отступами
+        header_content = ctk.CTkFrame(header_frame, fg_color="transparent")
+        header_content.pack(fill="x", padx=15, pady=12)
+        
+        # Заголовок с иконкой ошибки в одной строке
+        header_left = ctk.CTkFrame(header_content, fg_color="transparent")
+        header_left.pack(side="left", anchor="w")
+        
+        # Создаем рамку для иконки ошибки
+        icon_size = 32
+        icon_frame = ctk.CTkFrame(header_left, width=icon_size, height=icon_size, 
+                              corner_radius=icon_size/2, fg_color="#F24747")
+        icon_frame.pack(side="left", padx=(0, 10))
+        
+        # Делаем фрейм фиксированного размера
+        icon_frame.pack_propagate(False)
+        
+        # Добавляем значок восклицательного знака в рамку
+        exclamation = ctk.CTkLabel(icon_frame, text="!", 
                               font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
-                              text_color="#FF5252")
-        error_label.pack(pady=(0, 10))
+                               text_color="white")
+        exclamation.place(relx=0.5, rely=0.5, anchor="center")
         
-        message_label = ctk.CTkLabel(error_frame, text=message, 
-                                 font=ctk.CTkFont(family="Segoe UI", size=14),
+        # Заголовок ошибки
+        error_title = ctk.CTkLabel(header_left, text="Произошла ошибка", 
+                               font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
                                  text_color=self.text_color)
-        message_label.pack(pady=(0, 15))
+        error_title.pack(side="left")
         
-        ok_button = ctk.CTkButton(error_frame, text="OK", 
-                             font=ctk.CTkFont(family="Segoe UI", size=14),
-                             fg_color="#FF5252",
-                             hover_color="#E64747",
-                             corner_radius=8,
+        # Основное содержимое
+        content_frame = ctk.CTkFrame(main_container, fg_color="transparent")
+        content_frame.pack(fill="both", expand=True, pady=(0, 15))
+        
+        # Контейнер для текста с ошибкой
+        text_container = ctk.CTkFrame(content_frame, fg_color=self.input_bg, corner_radius=8)
+        text_container.pack(fill="both", expand=True)
+        
+        # Внутренний контейнер для текста с отступами
+        text_inner = ctk.CTkFrame(text_container, fg_color="transparent")
+        text_inner.pack(fill="both", expand=True, padx=2, pady=2)
+        
+        # Добавляем скроллбар для текстового поля
+        scrollbar = ctk.CTkScrollbar(text_inner)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Текстовое поле для текста ошибки с возможностью выделения и копирования
+        error_text = tk.Text(text_inner, 
+                           wrap="word", 
+                           bg="#1A2035", 
+                           fg="#E7E7E7",
+                           font=("Consolas", 12),
+                           bd=0,
+                           padx=15,
+                           pady=15,
+                           highlightthickness=0)
+        error_text.pack(side="left", fill="both", expand=True)
+        
+        # Связываем скроллбар с текстовым полем
+        scrollbar.configure(command=error_text.yview)
+        error_text.configure(yscrollcommand=scrollbar.set)
+        
+        # Вставляем текст ошибки
+        error_text.insert("1.0", message)
+        
+        # Добавляем небольшую подсказку о копировании
+        hint_text = ctk.CTkLabel(main_container, 
+                             text="Совет: выделите текст для копирования или используйте кнопку ниже",
+                             font=ctk.CTkFont(family="Segoe UI", size=11),
+                             text_color="#767C93")
+        hint_text.pack(anchor="w", pady=(0, 10))
+        
+        # Кнопки действий с красивым дизайном
+        buttons_frame = ctk.CTkFrame(main_container, fg_color="transparent")
+        buttons_frame.pack(fill="x")
+        
+        # Разделяем кнопки на правую и левую группы
+        left_buttons = ctk.CTkFrame(buttons_frame, fg_color="transparent")
+        left_buttons.pack(side="left")
+        
+        right_buttons = ctk.CTkFrame(buttons_frame, fg_color="transparent")
+        right_buttons.pack(side="right")
+        
+        # Кнопка для копирования текста ошибки
+        copy_button = ctk.CTkButton(left_buttons, text="Копировать текст", 
+                               font=ctk.CTkFont(family="Segoe UI", size=13),
+                               fg_color="#2D5C9E",
+                               hover_color="#1F4A8A",
+                               corner_radius=6,
+                               command=lambda: self.copy_error_text(error_text),
+                               width=140,
+                               height=36,
+                               border_spacing=8,
+                               image=self.get_copy_icon())
+        copy_button.pack(side="left", padx=(0, 10))
+        
+        # Кнопка OK для закрытия окна
+        ok_button = ctk.CTkButton(right_buttons, text="Закрыть", 
+                             font=ctk.CTkFont(family="Segoe UI", size=13),
+                             fg_color="#3E4558",
+                             hover_color="#333A4D",
+                             corner_radius=6,
                              command=error_window.destroy,
-                             width=100)
-        ok_button.pack()
+                             width=100,
+                             height=36)
+        ok_button.pack(side="right")
+        
+        # Добавляем эффект при открытии
+        self.animate_error_window(error_window)
         
         # Make modal
         error_window.transient(self)
         error_window.grab_set()
         self.wait_window(error_window)
+    
+    def animate_error_window(self, window):
+        """Анимация появления окна ошибки"""
+        # Начинаем с прозрачного окна
+        window.attributes('-alpha', 0.0)
+        
+        # Анимация появления
+        def fade_in(alpha=0.0):
+            alpha += 0.1
+            window.attributes('-alpha', alpha)
+            if alpha < 1.0:
+                window.after(20, lambda: fade_in(alpha))
+        
+        # Запускаем анимацию
+        fade_in()
+    
+    def get_copy_icon(self):
+        """Создает иконку копирования для кнопки"""
+        try:
+            # Если PIL доступен, создаем иконку
+            from PIL import Image, ImageDraw
+            
+            # Создаем пустое изображение с прозрачным фоном
+            icon_size = 14
+            icon = Image.new("RGBA", (icon_size, icon_size), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(icon)
+            
+            # Рисуем значок копирования
+            # Передний документ
+            draw.rectangle([3, 3, icon_size-1, icon_size-1], outline="white")
+            # Задний документ
+            draw.rectangle([1, 1, icon_size-3, icon_size-3], outline="white")
+            
+            return ctk.CTkImage(light_image=icon, dark_image=icon, size=(icon_size, icon_size))
+        except Exception:
+            # Если создать иконку не удалось, возвращаем None
+            return None
+    
+    def copy_error_text(self, text_widget):
+        """Копирует весь текст из текстового виджета в буфер обмена"""
+        try:
+            text_content = text_widget.get("1.0", "end-1c")  # Получаем весь текст без последнего символа новой строки
+            self.clipboard_clear()
+            self.clipboard_append(text_content)
+            
+            # Визуальная обратная связь - выделяем весь текст на короткое время
+            text_widget.tag_add("sel", "1.0", "end-1c")
+            
+            # Кратковременно изменяем цвет фона текста для индикации
+            original_bg = text_widget["bg"]
+            text_widget.config(bg="#2A3147")
+            
+            # Возвращаем исходный фон через 500 мс
+            def restore_bg():
+                text_widget.config(bg=original_bg)
+                text_widget.tag_remove("sel", "1.0", "end")
+            
+            self.after(500, restore_bg)
+        except Exception as e:
+            print(f"Ошибка при копировании текста: {str(e)}")
     
     def create_logo(self):
         """Create a smooth, anti-aliased logo"""
@@ -595,39 +759,43 @@ class NexusTGApp(ctk.CTk):
                                    command=lambda: self.add_log_message("Нажата кнопка настроек"))
         settings_button.pack(side="left", padx=(15, 0))
         
-        # Создаем выпадающее меню с улучшенным стилем
-        self.dropdown_menu = tk.Menu(self, tearoff=0, bg=self.dark_bg, fg=self.text_color, 
-                               activebackground=self.primary_blue, activeforeground="white",
-                               relief="solid", bd=1, font=("Segoe UI", 11))
-        
-        # Привязываем кнопки к соответствующим методам
-        self.dropdown_menu.add_command(label="Команды", command=self.show_commands_screen)
-        self.dropdown_menu.add_command(label="Добавить", command=lambda: self.add_log_message("Нажата кнопка: Добавить"))
-        self.dropdown_menu.add_command(label="Настройки", command=lambda: self.add_log_message("Нажата кнопка: Настройки"))
-        self.dropdown_menu.add_separator()
-        self.dropdown_menu.add_command(label="NexusTG", command=lambda: self.add_log_message("Нажата кнопка: NexusTG"))
+        # Создаем красивое кастомное выпадающее меню
+        # Используем собственную реализацию выпадающего меню вместо стандартного tk.Menu
+        self.custom_dropdown_visible = False
+        self.custom_dropdown_frame = None
         
         # Фрейм для кнопок справа
         right_buttons_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
         right_buttons_frame.place(relx=0.98, y=30, anchor="e")
         
-        # Добавляем кнопку остановки/запуска бота
+        # Добавляем кнопку остановки/запуска бота с учетом текущего состояния
+        if hasattr(self, 'bot_is_running') and self.bot_is_running:
+            # Бот запущен - показываем кнопку "Остановить"
+            button_text = "Остановить"
+            button_color = self.primary_blue
+            button_hover = "#1565c0"
+        else:
+            # Бот остановлен - показываем кнопку "Запустить"
+            button_text = "Запустить"
+            button_color = "#28a745"
+            button_hover = "#218838"
+            
         self.toggle_bot_button = ctk.CTkButton(right_buttons_frame, 
-                                          text="Остановить", 
+                                          text=button_text, 
                                           font=ctk.CTkFont(family="Segoe UI", size=14),
-                                          fg_color=self.primary_blue,
-                                          hover_color="#1565c0",
+                                          fg_color=button_color,
+                                          hover_color=button_hover,
                                           height=32,
                                           corner_radius=8,
                                           command=self.toggle_bot_status)
         self.toggle_bot_button.pack(side="left", padx=(0, 15))
         
         # Добавляем кнопку с иконкой проекта справа
-        logo_button_frame = ctk.CTkFrame(right_buttons_frame, fg_color="transparent", width=40, height=40)
-        logo_button_frame.pack(side="left")
+        self.logo_button_frame = ctk.CTkFrame(right_buttons_frame, fg_color="transparent", width=40, height=40)
+        self.logo_button_frame.pack(side="left")
         
         # Создаем канвас для иконки
-        self.project_logo_canvas = ctk.CTkCanvas(logo_button_frame, width=40, height=40, 
+        self.project_logo_canvas = ctk.CTkCanvas(self.logo_button_frame, width=40, height=40, 
                                        bg=self.input_bg, highlightthickness=0)
         self.project_logo_canvas.pack()
         
@@ -649,12 +817,8 @@ class NexusTGApp(ctk.CTk):
         self.project_logo_canvas.create_text(20, 20, text="NT", fill=self.text_color, 
                                     font=("Segoe UI", 14, "bold"), tags="logo")
         
-        # Функция для показа выпадающего меню при нажатии на иконку
-        def show_menu(event):
-            self.dropdown_menu.post(event.x_root, event.y_root)
-        
         # Привязываем нажатие к показу меню
-        self.project_logo_canvas.bind("<Button-1>", show_menu)
+        self.project_logo_canvas.bind("<Button-1>", self.toggle_custom_dropdown)
         
         # Main content area
         content_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
@@ -686,9 +850,10 @@ class NexusTGApp(ctk.CTk):
                               text_color=self.secondary_text)
         owners_info.pack(anchor="w", padx=20, pady=2)
         
-        # Status info
+        # Status info с учетом текущего состояния
+        status_text = "Активен" if self.bot_is_running else "Остановлен"
         self.bot_status_info = ctk.CTkLabel(info_frame, 
-                              text=f"Статус: Активен", 
+                              text=f"Статус: {status_text}", 
                               font=ctk.CTkFont(family="Segoe UI", size=14),
                               text_color=self.secondary_text)
         self.bot_status_info.pack(anchor="w", padx=20, pady=(2, 15))
@@ -718,50 +883,119 @@ class NexusTGApp(ctk.CTk):
         scrollbar.configure(command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
         
-        # Добавляем информативные логи
-        current_time = time.strftime("%H:%M:%S")
-        self.log_text.insert("end", f"[{current_time}] Приложение NexusTG запущено\n")
+        # Проверяем, есть ли сохраненная история логов
+        if not self.log_history:
+            # Если истории нет, добавляем стандартные сообщения
+            current_time = time.strftime("%H:%M:%S")
+            startup_message = f"[{current_time}] Приложение NexusTG запущено"
+            self.log_history.append(startup_message)
         
         # Добавляем информацию о боте, если она есть
         if hasattr(self, 'bot_info') and self.bot_info:
-            self.log_text.insert("end", f"[{current_time}] {self.bot_info}\n")
+            bot_info_message = f"[{current_time}] {self.bot_info}"
+            self.log_history.append(bot_info_message)
+            
+            ready_message = f"[{current_time}] Бот готов к работе. Доступна команда /start"
+            self.log_history.append(ready_message)
         
-        self.log_text.insert("end", f"[{current_time}] Бот готов к работе. Доступна команда /start\n")
+        # Отображаем сохраненную историю логов
+        self.log_text.configure(state="normal")
+        for log_entry in self.log_history:
+            self.log_text.insert("end", f"{log_entry}\n")
         self.log_text.see("end")  # Прокрутка к последнему сообщению
         self.log_text.configure(state="disabled")  # Make read-only
         
     def toggle_bot_status(self):
         """Переключение статуса бота (остановка/запуск)"""
-        if hasattr(self, 'bot') and self.bot.is_running:
+        if hasattr(self, 'bot') and hasattr(self.bot, 'is_running') and self.bot.is_running:
             # Останавливаем бота
             threading.Thread(target=self.stop_bot, daemon=True).start()
             self.toggle_bot_button.configure(text="Запустить", fg_color="#28a745", hover_color="#218838")
             self.bot_status_info.configure(text="Статус: Остановлен")
             self.add_log_message("Бот остановлен")
+            # Обновляем состояние бота
+            self.bot_is_running = False
         else:
             # Запускаем бота снова
             threading.Thread(target=self.restart_bot, daemon=True).start()
             self.toggle_bot_button.configure(text="Остановить", fg_color=self.primary_blue, hover_color="#1565c0")
             self.bot_status_info.configure(text="Статус: Активен")
             self.add_log_message("Бот запущен")
+            # Обновляем состояние бота
+            self.bot_is_running = True
     
     def stop_bot(self):
         """Остановка бота"""
         if hasattr(self, 'bot') and self.event_loop:
-            self.event_loop.run_until_complete(self.bot.stop_bot())
+            # Создаем новый поток для остановки бота
+            def stop_bot_thread():
+                try:
+                    # Важно: используем тот же event_loop, что и при запуске бота
+                    if hasattr(self, 'event_loop') and self.event_loop.is_running():
+                        # Если у нас есть и работает цикл событий от запуска бота, создаем новую задачу
+                        async def stop_task():
+                            if hasattr(self, 'bot'):
+                                await self.bot.stop_bot()
+                        asyncio.run_coroutine_threadsafe(stop_task(), self.event_loop)
+                    else:
+                        # Создаем новый event_loop как запасной вариант
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        loop.run_until_complete(self.bot.stop_bot())
+                        loop.close()
+                except Exception as e:
+                    error_msg = f"Ошибка при остановке бота: {str(e)}"
+                    self.after(0, lambda msg=error_msg: self.show_error(msg))
+            
+            stop_thread = threading.Thread(target=stop_bot_thread)
+            stop_thread.daemon = True
+            stop_thread.start()
     
     def restart_bot(self):
         """Перезапуск бота"""
         if hasattr(self, 'bot'):
-            # Запускаем бота снова
-            self.event_loop.run_until_complete(self.bot.start_bot())
+            # Запускаем бота снова в отдельном потоке
+            def restart_bot_thread():
+                try:
+                    # Используем тот же event_loop, что и при остановке, если он доступен
+                    if hasattr(self, 'event_loop') and self.event_loop.is_running():
+                        # Если у нас есть и работает цикл событий от запуска бота, создаем новую задачу
+                        async def start_task():
+                            if hasattr(self, 'bot'):
+                                success = await self.bot.start_bot()
+                                if not success:
+                                    error_msg = "Не удалось запустить бота. Проверьте токен и попробуйте снова."
+                                    self.after(0, lambda msg=error_msg: self.show_error(msg))
+                        asyncio.run_coroutine_threadsafe(start_task(), self.event_loop)
+                    else:
+                        # Создаем новый event_loop как запасной вариант
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        success = loop.run_until_complete(self.bot.start_bot())
+                        loop.close()
+                        if not success:
+                            error_msg = "Не удалось запустить бота. Проверьте токен и попробуйте снова."
+                            self.after(0, lambda msg=error_msg: self.show_error(msg))
+                except Exception as e:
+                    error_msg = f"Ошибка при перезапуске бота: {str(e)}"
+                    self.after(0, lambda msg=error_msg: self.show_error(msg))
+            
+            restart_thread = threading.Thread(target=restart_bot_thread)
+            restart_thread.daemon = True
+            restart_thread.start()
     
     def add_log_message(self, message):
         """Добавление сообщения в лог"""
         if hasattr(self, 'log_text') and self.log_text.winfo_exists():
             current_time = time.strftime("%H:%M:%S")
+            log_entry = f"[{current_time}] {message}"
+            
+            # Сохраняем сообщение в истории логов
+            self.log_history.append(log_entry)
+            
+            # Отображаем в текстовом поле
             self.log_text.configure(state="normal")
-            self.log_text.insert("end", f"[{current_time}] {message}\n")
+            self.log_text.insert("end", f"{log_entry}\n")
             self.log_text.see("end")  # Прокрутка к последнему сообщению
             self.log_text.configure(state="disabled")
     
@@ -839,7 +1073,7 @@ class NexusTGApp(ctk.CTk):
         try:
             def update_progress(text, progress):
                 """Вспомогательная функция для обновления прогресса в главном потоке"""
-                self.after(0, lambda: self.update_loading_progress(text, progress))
+                self.after(0, lambda t=text, p=progress: self.update_loading_progress(t, p))
                 self.update()  # Принудительно обновляем GUI
                 
             update_progress("Подключение к Telegram...", 0.2)
@@ -850,9 +1084,9 @@ class NexusTGApp(ctk.CTk):
             
             # Устанавливаем колбэки для взаимодействия с GUI
             self.bot.set_callbacks(
-                error_callback=lambda msg: self.after(0, lambda: self.show_error(msg)),
-                success_callback=lambda msg: self.after(0, lambda: self.add_log_message(msg)),
-                message_callback=lambda msg: self.after(0, lambda: self.add_log_message(msg))
+                error_callback=lambda msg: self.after(0, lambda m=msg: self.bot_error_callback(m)),
+                success_callback=lambda msg: self.after(0, lambda m=msg: self.bot_success_callback(m)),
+                message_callback=lambda msg: self.after(0, lambda m=msg: self.bot_message_callback(m))
             )
             
             update_progress("Проверка токена...", 0.4)
@@ -862,13 +1096,11 @@ class NexusTGApp(ctk.CTk):
             self.event_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.event_loop)
             
-            # Запускаем бота
-            success = self.event_loop.run_until_complete(self.bot.start_bot())
-            if not success:
-                self.after(0, lambda: self.show_error("Не удалось запустить бота. Проверьте токен и попробуйте снова."))
-                self.after(1500, self.create_config_screen)
-                return
-                
+            # Запускаем бота в отдельном потоке, чтобы не блокировать UI
+            bot_thread = threading.Thread(target=self._run_bot_async, daemon=True)
+            bot_thread.start()
+            
+            # Продолжаем показывать прогресс загрузки независимо от запуска бота
             update_progress("Загрузка компонентов...", 0.6)
             time.sleep(0.5)
             
@@ -879,12 +1111,24 @@ class NexusTGApp(ctk.CTk):
             time.sleep(0.5)
             
             # После полной загрузки переходим к основному экрану
-            self.after(500, lambda: self.create_operation_screen())
+            self.after(500, self.create_operation_screen)
             
         except Exception as e:
             error_message = f"Ошибка при запуске бота: {str(e)}"
-            self.after(0, lambda: self.show_error(error_message))
+            self.after(0, lambda msg=error_message: self.show_error(msg))
             self.after(1500, self.create_config_screen)
+    
+    def _run_bot_async(self):
+        """Запускает бота асинхронно в отдельном потоке"""
+        try:
+            success = self.event_loop.run_until_complete(self.bot.start_bot())
+            if not success:
+                error_msg = "Не удалось запустить бота. Проверьте токен и попробуйте снова."
+                self.after(0, lambda msg=error_msg: self.show_error(msg))
+                self.after(1500, self.create_config_screen)
+        except Exception as e:
+            error_msg = f"Ошибка при запуске бота: {str(e)}"
+            self.after(0, lambda msg=error_msg: self.show_error(msg))
     
     def bot_error_callback(self, message):
         """Колбэк для обработки ошибок от бота"""
@@ -1058,7 +1302,7 @@ class NexusTGApp(ctk.CTk):
                     if self.bot_token and self.owner_ids:
                         # Переходим сразу к экрану загрузки и запуску бота
                         self.create_loading_screen()
-                        loading_thread = threading.Thread(target=self.start_telegram_bot)
+                        loading_thread = threading.Thread(target=self.simulate_loading)
                         loading_thread.daemon = True
                         loading_thread.start()
                         return
@@ -1068,6 +1312,544 @@ class NexusTGApp(ctk.CTk):
                 
         # Если конфигурация не найдена или не валидна, показываем экран приветствия
         # (этот код выполняется только если return выше не сработал)
+
+    def toggle_custom_dropdown(self, event=None):
+        """Показывает или скрывает кастомное выпадающее меню"""
+        if self.custom_dropdown_visible and self.custom_dropdown_frame:
+            # Если меню видимо, скрываем его
+            self.custom_dropdown_frame.destroy()
+            self.custom_dropdown_visible = False
+        else:
+            # Если меню скрыто, показываем его
+            self.show_custom_dropdown()
+    
+    def show_custom_dropdown(self):
+        """Показывает красивое кастомное выпадающее меню"""
+        # Определяем положение меню относительно кнопки
+        x = self.logo_button_frame.winfo_rootx() - self.winfo_rootx() - 160
+        y = self.logo_button_frame.winfo_rooty() - self.winfo_rooty() + 40
+        
+        # Проверка границ экрана
+        menu_width = 240  # Примерная ширина меню
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        
+        # Коррекция координат, если меню выходит за правую границу экрана
+        root_x = self.winfo_rootx()
+        if root_x + x + menu_width > screen_width:
+            x = max(10, x - menu_width)
+            
+        # Проверка верхней и нижней границы экрана
+        root_y = self.winfo_rooty()
+        menu_height = 220  # Примерная высота меню
+        if root_y + y + menu_height > screen_height:
+            y = max(10, screen_height - root_y - menu_height - 10)
+        
+        # Создаем фрейм для выпадающего меню
+        self.custom_dropdown_frame = ctk.CTkFrame(
+            self.main_frame, 
+            fg_color="#1D2637",
+            corner_radius=10,
+            border_width=1,
+            border_color="#2D374B"
+        )
+        self.custom_dropdown_frame.place(x=x, y=y)
+        
+        # Добавляем контейнер с отступами
+        menu_container = ctk.CTkFrame(self.custom_dropdown_frame, fg_color="transparent")
+        menu_container.pack(padx=5, pady=5)
+        
+        # Заголовок меню
+        menu_header = ctk.CTkFrame(menu_container, fg_color="transparent", height=30)
+        menu_header.pack(fill="x", padx=10, pady=(5, 10))
+        
+        # Логотип в заголовке
+        logo_size = 24
+        logo_frame = ctk.CTkFrame(menu_header, fg_color=self.primary_blue, 
+                              width=logo_size, height=logo_size, corner_radius=logo_size/2)
+        logo_frame.pack(side="left", padx=(0, 8))
+        logo_frame.pack_propagate(False)
+        
+        logo_text = ctk.CTkLabel(logo_frame, text="NT", font=("Segoe UI", 12, "bold"),
+                             text_color=self.text_color)
+        logo_text.place(relx=0.5, rely=0.5, anchor="center")
+        
+        menu_title = ctk.CTkLabel(menu_header, text="NexusTG Меню", 
+                              font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+                              text_color=self.text_color)
+        menu_title.pack(side="left")
+        
+        # Кнопки для меню
+        # Кнопка "Команды"
+        commands_button = self.create_menu_button(
+            menu_container, 
+            "Команды", 
+            "Управление командами бота",
+            self.show_commands_screen,
+            icon_text="🔧"
+        )
+        commands_button.pack(fill="x", padx=5, pady=2)
+        
+        # Кнопка "Добавить"
+        add_button = self.create_menu_button(
+            menu_container, 
+            "Добавить функцию", 
+            "Добавление новых возможностей",
+            lambda: self.add_log_message("Нажата кнопка: Добавить функцию"),
+            icon_text="➕"
+        )
+        add_button.pack(fill="x", padx=5, pady=2)
+        
+        # Разделитель
+        separator = ctk.CTkFrame(menu_container, height=1, fg_color="#2D374B")
+        separator.pack(fill="x", padx=10, pady=8)
+        
+        # Кнопка "О программе"
+        about_button = self.create_menu_button(
+            menu_container, 
+            "О программе", 
+            "Информация о NexusTG",
+            self.show_about_dialog,
+            icon_text="ℹ️"
+        )
+        about_button.pack(fill="x", padx=5, pady=2)
+        
+        # Отмечаем, что меню отображается
+        self.custom_dropdown_visible = True
+        
+        # Привязываем событие закрытия при клике вне меню
+        self.bind("<Button-1>", self.close_dropdown_if_outside, add="+")
+    
+    def create_menu_button(self, parent, title, subtitle, command, icon_text=None, is_danger=False):
+        """Создает стильную кнопку для кастомного меню"""
+        # Цвета для разных состояний кнопок
+        normal_fg = "#1D2637"
+        hover_color = "#E74C3C" if is_danger else "#273245"
+        
+        # Создаем основной фрейм с фиксированной высотой
+        button_frame = ctk.CTkFrame(
+            parent, 
+            fg_color=normal_fg, 
+            corner_radius=8,
+            height=60,
+            border_width=0
+        )
+        
+        # Создаем контейнер для содержимого с отступами
+        content_frame = ctk.CTkFrame(button_frame, fg_color="transparent")
+        content_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        # Добавляем иконку, если она указана
+        if icon_text:
+            icon_label = ctk.CTkLabel(
+                content_frame, 
+                text=icon_text,
+                font=ctk.CTkFont(size=20),
+                width=30,
+                text_color=self.text_color
+            )
+            icon_label.pack(side="left", padx=(5, 10))
+        
+        # Создаем контейнер для текстовых меток
+        text_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+        text_frame.pack(side="left", fill="both", expand=True)
+        
+        # Заголовок
+        title_label = ctk.CTkLabel(
+            text_frame, 
+            text=title,
+            font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+            text_color="#E74C3C" if is_danger else self.text_color,
+            anchor="w",
+            wraplength=160,
+            justify="left"
+        )
+        title_label.pack(anchor="w", fill="x")
+        
+        # Подзаголовок
+        subtitle_label = ctk.CTkLabel(
+            text_frame, 
+            text=subtitle,
+            font=ctk.CTkFont(family="Segoe UI", size=11),
+            text_color=self.secondary_text,
+            anchor="w",
+            wraplength=160,
+            justify="left"
+        )
+        subtitle_label.pack(anchor="w", fill="x", pady=(2, 0))
+        
+        # Создаем функции для эффектов при наведении
+        def on_enter(e):
+            button_frame.configure(fg_color=hover_color)
+            
+        def on_leave(e):
+            button_frame.configure(fg_color=normal_fg)
+            
+        def on_click(e):
+            # Временно меняем цвет для эффекта нажатия
+            button_frame.configure(fg_color=hover_color)
+            # Запускаем команду с задержкой
+            wrapper = self.close_dropdown_and_execute(command)
+            button_frame.after(50, wrapper)
+            
+        # Привязываем события ко ВСЕМ компонентам для надежности
+        for widget in [button_frame, content_frame, text_frame, title_label, subtitle_label]:
+            widget.bind("<Enter>", on_enter)
+            widget.bind("<Leave>", on_leave)
+            widget.bind("<Button-1>", on_click)
+            
+        # Если есть иконка, привязываем события и к ней
+        if icon_text:
+            icon_label.bind("<Enter>", on_enter)
+            icon_label.bind("<Leave>", on_leave)
+            icon_label.bind("<Button-1>", on_click)
+        
+        return button_frame
+    
+    def close_dropdown_if_outside(self, event):
+        """Закрывает выпадающее меню при клике вне его области"""
+        if not self.custom_dropdown_visible or not self.custom_dropdown_frame:
+            return
+            
+        # Проверяем, был ли клик вне области меню
+        x, y = event.x_root, event.y_root
+        frame_x = self.custom_dropdown_frame.winfo_rootx()
+        frame_y = self.custom_dropdown_frame.winfo_rooty()
+        frame_width = self.custom_dropdown_frame.winfo_width()
+        frame_height = self.custom_dropdown_frame.winfo_height()
+        
+        if not (frame_x <= x <= frame_x + frame_width and frame_y <= y <= frame_y + frame_height):
+            # Клик был вне меню
+            self.custom_dropdown_frame.destroy()
+            self.custom_dropdown_visible = False
+            self.unbind("<Button-1>")
+    
+    def close_dropdown_and_execute(self, command):
+        """Закрывает выпадающее меню и выполняет команду"""
+        def wrapper():
+            # Сначала закрываем меню
+            if self.custom_dropdown_visible and self.custom_dropdown_frame:
+                self.custom_dropdown_frame.destroy()
+                self.custom_dropdown_visible = False
+                self.unbind("<Button-1>")
+            
+            # Затем выполняем команду с небольшой задержкой
+            self.after(50, command)
+            
+        return wrapper
+    
+    def show_about_dialog(self):
+        """Показывает экран 'О программе' внутри основного окна"""
+        # Логируем действие
+        self.add_log_message("Открыт экран 'О программе'")
+        
+        # Очищаем предыдущее содержимое
+        for widget in self.main_frame.winfo_children():
+            widget.destroy()
+            
+        # Создаем верхнюю панель с кнопкой возврата
+        header_frame = ctk.CTkFrame(self.main_frame, fg_color=self.input_bg, height=60)
+        header_frame.pack(fill="x", padx=0, pady=0)
+        
+        # Кнопка возврата
+        back_button = ctk.CTkButton(header_frame, 
+                                text="Назад", 
+                                font=ctk.CTkFont(family="Segoe UI", size=13),
+                                fg_color="transparent",
+                                text_color=self.secondary_text,
+                                hover_color=self.input_bg,
+                                height=28,
+                                corner_radius=6,
+                                command=self.create_operation_screen)
+        back_button.place(x=20, y=18)
+        
+        # Заголовок экрана
+        title_label = ctk.CTkLabel(header_frame, text="О программе", 
+                               font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
+                               text_color=self.text_color)
+        title_label.place(relx=0.5, y=30, anchor="center")
+        
+        # Основной контейнер - используем скроллируемый фрейм для адаптивности
+        main_container = ctk.CTkScrollableFrame(self.main_frame, fg_color="transparent")
+        main_container.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Верхняя секция с анимированным логотипом
+        header_content = ctk.CTkFrame(main_container, fg_color="#1A202E", corner_radius=15, height=180)
+        header_content.pack(fill="x", pady=(0, 20))
+        header_content.pack_propagate(False)  # Предотвращаем изменение размера контейнером
+        
+        # Контейнер для логотипа и названия
+        logo_container = ctk.CTkFrame(header_content, fg_color="transparent")
+        logo_container.place(relx=0.5, rely=0.5, anchor="center")
+        
+        # Анимированный логотип приложения (как на главном экране)
+        logo_size = 90
+        self.about_logo_canvas = ctk.CTkCanvas(logo_container, width=logo_size, height=logo_size, 
+                                          bg=self.dark_bg, highlightthickness=0)
+        self.about_logo_canvas.pack(pady=(0, 15))  # Увеличиваем отступ снизу
+        
+        # Рисуем логотип
+        self.about_logo_canvas.create_oval(10, 10, logo_size-10, logo_size-10, 
+                                      fill=self.primary_blue, outline="", tags="logo")
+        # Рисуем внутренний круг
+        inner_offset = 18
+        self.about_logo_canvas.create_oval(inner_offset, inner_offset, 
+                                      logo_size-inner_offset, logo_size-inner_offset, 
+                                      fill=self.dark_bg, outline="", tags="logo")
+        # Рисуем "NT" в логотипе
+        self.about_logo_canvas.create_text(logo_size/2, logo_size/2, text="NT",
+                                      font=("Segoe UI", 24, "bold"),
+                                      fill=self.text_color, tags="logo")
+        
+        # Добавляем вращающуюся дугу
+        self.about_arc_angle = 45
+        self.animate_about_logo_arc()
+        
+        # Название приложения и версия
+        app_name = ctk.CTkLabel(logo_container, text="NexusTG", 
+                           font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"),
+                           text_color=self.text_color)
+        app_name.pack(pady=(0, 5))
+        
+        app_version = ctk.CTkLabel(logo_container, text="Версия 1.0.0", 
+                              font=ctk.CTkFont(family="Segoe UI", size=14),
+                              text_color=self.secondary_text)
+        app_version.pack()
+        
+        # Основной контент - описание приложения
+        app_desc_frame = ctk.CTkFrame(main_container, fg_color="#1A202E", corner_radius=15)
+        app_desc_frame.pack(fill="x", pady=(0, 20))
+        
+        # Отступы внутри фрейма
+        app_desc_inner = ctk.CTkFrame(app_desc_frame, fg_color="transparent")
+        app_desc_inner.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Заголовок описания (по центру)
+        desc_title = ctk.CTkLabel(app_desc_inner, text="О приложении", 
+                             font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
+                             text_color=self.text_color)
+        desc_title.pack(anchor="center", pady=(0, 15))
+        
+        # Краткое описание (по центру)
+        desc_text = ctk.CTkLabel(app_desc_inner, 
+                            text="NexusTG - мощный инструмент для управления компьютером через Telegram. Безопасно контролируйте ваш ПК с любого устройства.",
+                            font=ctk.CTkFont(family="Segoe UI", size=14),
+                            text_color=self.secondary_text,
+                            justify="center",
+                            wraplength=500)
+        desc_text.pack(fill="x", pady=(0, 15))
+        
+        # Ключевые особенности
+        features_title = ctk.CTkLabel(app_desc_inner, text="Ключевые особенности", 
+                                 font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                                 text_color=self.text_color)
+        features_title.pack(anchor="center", pady=(0, 10))
+        
+        # Список особенностей
+        features = [
+            "🔒 Безопасное управление",
+            "🌍 Доступ с любой точки мира",
+            "⚡ Мгновенный отклик",
+            "🧰 Гибкие настройки"
+        ]
+        
+        # Контейнер для списка особенностей (центрирование)
+        features_container = ctk.CTkFrame(app_desc_inner, fg_color="transparent")
+        features_container.pack(pady=(0, 10))
+        
+        for feature in features:
+            feature_label = ctk.CTkLabel(features_container, 
+                                    text=feature,
+                                    font=ctk.CTkFont(family="Segoe UI", size=14),
+                                    text_color=self.secondary_text)
+            feature_label.pack(pady=(0, 5))
+        
+        # Информация о разработчике - двухстороннее расположение
+        dev_frame = ctk.CTkFrame(main_container, fg_color="#1A202E", corner_radius=15)
+        dev_frame.pack(fill="x", pady=(0, 15))
+        
+        # Заголовок раздела о разработчике
+        dev_title_frame = ctk.CTkFrame(dev_frame, fg_color="transparent")
+        dev_title_frame.pack(fill="x", padx=20, pady=(15, 10))
+        
+        dev_title = ctk.CTkLabel(dev_title_frame, text="Разработчик и контакты", 
+                            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
+                            text_color=self.text_color)
+        dev_title.pack(anchor="center")
+        
+        # Контейнер для содержимого
+        dev_content = ctk.CTkFrame(dev_frame, fg_color="transparent")
+        dev_content.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        # Разделяем на левую и правую части
+        dev_left = ctk.CTkFrame(dev_content, fg_color="transparent")
+        dev_left.pack(side="left", fill="both", expand=True)
+        
+        dev_right = ctk.CTkFrame(dev_content, fg_color="transparent")
+        dev_right.pack(side="right", fill="both", expand=True)
+        
+        # ЛЕВАЯ ЧАСТЬ - Информация о разработчике
+        # Загрузка и отображение аватара разработчика
+        avatar_size = 120
+        avatar_path = "cfg/content/kazurage.png"
+        
+        # Создаем контейнер для аватарки
+        avatar_container = ctk.CTkFrame(dev_left, fg_color="transparent")
+        avatar_container.pack(pady=10)
+        
+        # Загружаем аватарку
+        try:
+            if os.path.exists(avatar_path):
+                # Загружаем и размещаем изображение напрямую с помощью CTkImage
+                original_image = Image.open(avatar_path)
+                # Убедимся, что размер правильный
+                avatar_image = original_image.resize((avatar_size, avatar_size))
+                # Создаем CTkImage
+                ctk_avatar = ctk.CTkImage(
+                    light_image=avatar_image,
+                    dark_image=avatar_image,
+                    size=(avatar_size, avatar_size)
+                )
+                
+                # Создаем круглый фон для аватарки
+                avatar_bg = ctk.CTkFrame(
+                    avatar_container,
+                    width=avatar_size,
+                    height=avatar_size,
+                    fg_color=self.primary_blue,
+                    corner_radius=avatar_size//2
+                )
+                avatar_bg.pack()
+                avatar_bg.pack_propagate(False)  # Фиксируем размер
+                
+                # Размещаем изображение поверх круглого фона
+                avatar_label = ctk.CTkLabel(
+                    avatar_bg,
+                    text="",
+                    image=ctk_avatar
+                )
+                avatar_label.place(relx=0.5, rely=0.5, anchor="center")
+                
+                # Сохраняем ссылку на изображение в атрибуте экземпляра, чтобы оно не было удалено сборщиком мусора
+                self.avatar_image = ctk_avatar
+                
+                print("Аватар успешно загружен")
+            else:
+                # Если файл не найден, показываем заглушку
+                avatar_bg = ctk.CTkFrame(
+                    avatar_container,
+                    width=avatar_size,
+                    height=avatar_size, 
+                    fg_color=self.primary_blue,
+                    corner_radius=avatar_size//2
+                )
+                avatar_bg.pack()
+                avatar_bg.pack_propagate(False)
+                
+                avatar_text = ctk.CTkLabel(
+                    avatar_bg,
+                    text="K", 
+                    font=ctk.CTkFont(size=48, weight="bold"),
+                    text_color=self.text_color
+                )
+                avatar_text.place(relx=0.5, rely=0.5, anchor="center")
+                print(f"Файл аватара не найден: {avatar_path}")
+        except Exception as e:
+            # В случае ошибки показываем заглушку
+            avatar_bg = ctk.CTkFrame(
+                avatar_container,
+                width=avatar_size,
+                height=avatar_size, 
+                fg_color=self.primary_blue,
+                corner_radius=avatar_size//2
+            )
+            avatar_bg.pack()
+            avatar_bg.pack_propagate(False)
+            
+            avatar_text = ctk.CTkLabel(
+                avatar_bg,
+                text="K", 
+                font=ctk.CTkFont(size=48, weight="bold"),
+                text_color=self.text_color
+            )
+            avatar_text.place(relx=0.5, rely=0.5, anchor="center")
+            print(f"Ошибка при загрузке аватара: {str(e)}")
+        
+        # Имя разработчика
+        dev_name = ctk.CTkLabel(dev_left, text="kazurage", 
+                           font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
+                           text_color=self.text_color)
+        dev_name.pack()
+        
+        # Роль
+        dev_role = ctk.CTkLabel(dev_left, text="Ведущий разработчик", 
+                           font=ctk.CTkFont(family="Segoe UI", size=14),
+                           text_color=self.secondary_text)
+        dev_role.pack(pady=(0, 10))
+        
+        # ПРАВАЯ ЧАСТЬ - Кнопки социальных сетей
+        contacts_title = ctk.CTkLabel(dev_right, text="Связаться", 
+                                 font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                                 text_color=self.text_color)
+        contacts_title.pack(pady=(5, 15))
+        
+        # Кнопка Telegram-аккаунта
+        tg_account_btn = ctk.CTkButton(dev_right, 
+                                  text="Telegram профиль", 
+                                  font=ctk.CTkFont(family="Segoe UI", size=14),
+                                  fg_color=self.primary_blue,
+                                  hover_color="#1565c0",
+                                  corner_radius=10,
+                                  height=38,
+                                  width=180,
+                                  command=lambda: webbrowser.open("https://t.me/kazurage"))
+        tg_account_btn.pack(pady=(0, 10))
+        
+        # Кнопка Telegram-канала
+        tg_channel_btn = ctk.CTkButton(dev_right, 
+                                  text="Telegram канал", 
+                                  font=ctk.CTkFont(family="Segoe UI", size=14),
+                                  fg_color="#0088cc",
+                                  hover_color="#0077b3",
+                                  corner_radius=10,
+                                  height=38,
+                                  width=180,
+                                  command=lambda: webbrowser.open("https://t.me/nexustg_channel"))
+        tg_channel_btn.pack()
+    
+    def animate_about_logo_arc(self):
+        """Анимирует дугу вокруг логотипа на экране 'О программе'"""
+        try:
+            if hasattr(self, 'about_logo_canvas') and self.about_logo_canvas.winfo_exists():
+                self.about_logo_canvas.delete("arc")
+                
+                # Параметры дуги
+                arc_thickness = 2
+                radius = 45
+                logo_size = 90
+                
+                # Координаты дуги
+                x0 = logo_size/2 - radius - arc_thickness
+                y0 = logo_size/2 - radius - arc_thickness
+                x1 = logo_size/2 + radius + arc_thickness
+                y1 = logo_size/2 + radius + arc_thickness
+                
+                # Рисуем дугу
+                self.about_logo_canvas.create_arc(
+                    x0, y0, x1, y1,
+                    start=self.about_arc_angle, extent=45,
+                    style=tk.ARC, width=arc_thickness,
+                    outline=self.accent_green, tags="arc")
+                
+                # Обновляем угол для следующего кадра
+                self.about_arc_angle = (self.about_arc_angle + 2) % 360
+                
+                # Продолжаем анимацию, если канвас существует
+                if self.about_logo_canvas.winfo_exists():
+                    self.after(50, self.animate_about_logo_arc)
+        except Exception as e:
+            # Если произошла ошибка, просто игнорируем
+            print(f"Ошибка анимации логотипа на странице 'О программе': {str(e)}")
 
 if __name__ == "__main__":
     app = NexusTGApp()

@@ -122,17 +122,38 @@ class TelegramBot:
     async def stop_bot(self):
         """Остановка бота"""
         if self.application and self.is_running:
-            # Останавливаем polling сначала
-            if hasattr(self.application, 'updater') and self.application.updater:
-                await self.application.updater.stop()
-            
-            # Затем останавливаем всё приложение
-            await self.application.stop()
-            self.is_running = False
-            
-            logger.info("Бот остановлен")
-            if self.message_callback:
-                self.message_callback("Бот остановлен")
+            try:
+                # Останавливаем polling сначала
+                if hasattr(self.application, 'updater') and self.application.updater:
+                    await self.application.updater.stop()
+                
+                # Затем останавливаем всё приложение
+                await self.application.stop()
+                
+                # Отмечаем, что бот остановлен
+                self.is_running = False
+                
+                logger.info("Бот остановлен")
+                if self.message_callback:
+                    self.message_callback("Бот остановлен")
+            except RuntimeError as e:
+                # Обрабатываем ошибку несоответствия циклов событий
+                if "got Future" in str(e) and "attached to a different loop" in str(e):
+                    logger.error(f"Ошибка цикла событий: {str(e)}")
+                    # Отмечаем бота как остановленного, даже если произошла ошибка
+                    self.is_running = False
+                    if self.message_callback:
+                        self.message_callback("Бот отмечен как остановленный, но возникла ошибка цикла событий")
+                else:
+                    # Другие ошибки времени выполнения
+                    logger.error(f"Ошибка при остановке бота: {str(e)}")
+                    if self.error_callback:
+                        self.error_callback(f"Ошибка при остановке бота: {str(e)}")
+            except Exception as e:
+                # Неспецифические ошибки
+                logger.error(f"Непредвиденная ошибка при остановке бота: {str(e)}")
+                if self.error_callback:
+                    self.error_callback(f"Непредвиденная ошибка при остановке бота: {str(e)}")
     
     async def _validate_token(self) -> bool:
         """
