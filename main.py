@@ -527,12 +527,27 @@ class NexusTGApp(ctk.CTk):
         # Очистить предыдущее содержимое
         for widget in self.main_frame.winfo_children():
             widget.destroy()
+            
+        # Создаем загрузочный экран
+        loading_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        loading_frame.place(relx=0.5, rely=0.5, anchor="center")
         
-            current_time = time.strftime("%H:%M:%S")
-            self.log_text.configure(state="normal")
-            self.log_text.insert("end", f"[{current_time}] {message}\n")
-            self.log_text.see("end")  # Прокрутка к последнему сообщению
-            self.log_text.configure(state="disabled")
+        # Создаем логотип
+        logo_canvas = ctk.CTkCanvas(loading_frame, width=80, height=80, 
+                                 bg=self.dark_bg, highlightthickness=0)
+        logo_canvas.pack(pady=(0, 20))
+        
+        # Рисуем логотип
+        logo_canvas.create_oval(5, 5, 75, 75, fill=self.primary_blue, outline="", tags="logo")
+        logo_canvas.create_oval(15, 15, 65, 65, fill=self.dark_bg, outline="", tags="logo")
+        logo_canvas.create_text(40, 40, text="NT", font=("Segoe UI", 24, "bold"),
+                             fill=self.text_color, tags="logo")
+        
+        # Текст загрузки
+        loading_label = ctk.CTkLabel(loading_frame, text="Загрузка...", 
+                                  font=ctk.CTkFont(family="Segoe UI", size=16),
+                                  text_color=self.text_color)
+        loading_label.pack(pady=(10, 0))
     
     def update_loading_progress(self, text, progress):
         """Update loading progress UI"""
