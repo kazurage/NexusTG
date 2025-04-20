@@ -77,15 +77,27 @@ class TelegramBot:
                     self.error_callback("Неверный токен бота. Пожалуйста, проверьте и введите заново.")
                 return False
             
-            # Создаем приложение
-            self.application = Application.builder().token(self.token).build()
+            # Создаем приложение с правильными настройками
+            builder = Application.builder().token(self.token)
+            self.application = builder.build()
             
             # Регистрируем команды
             register_commands(self.application, config, self.message_callback)
             
-            # Запускаем бота (неблокирующий режим)
+            # Логируем информацию
+            logger.info("Инициализация бота...")
+            if self.message_callback:
+                self.message_callback("Инициализация бота...")
+                
+            # Запускаем бота и начинаем обработку обновлений
             await self.application.initialize()
             await self.application.start()
+            
+            # Запускаем polling - непрерывную проверку новых сообщений от Telegram
+            # Это ключевой момент, без которого бот не будет обрабатывать сообщения
+            await self.application.updater.start_polling()
+            
+            logger.info("Бот успешно запущен и готов к работе")
             
             # Устанавливаем флаг, что бот запущен
             self.is_running = True
@@ -104,8 +116,15 @@ class TelegramBot:
     async def stop_bot(self):
         """Остановка бота"""
         if self.application and self.is_running:
+            # Останавливаем polling сначала
+            if hasattr(self.application, 'updater') and self.application.updater:
+                await self.application.updater.stop()
+            
+            # Затем останавливаем всё приложение
             await self.application.stop()
             self.is_running = False
+            
+            logger.info("Бот остановлен")
             if self.message_callback:
                 self.message_callback("Бот остановлен")
     

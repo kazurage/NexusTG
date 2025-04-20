@@ -569,28 +569,83 @@ class NexusTGApp(ctk.CTk):
         for widget in self.main_frame.winfo_children():
             widget.destroy()
         
-        # Create header with small logo
+        # Create header with title
         header_frame = ctk.CTkFrame(self.main_frame, fg_color=self.input_bg, height=60)
         header_frame.pack(fill="x", padx=0, pady=0)
         
-        # Создаем выпадающее меню
-        self.dropdown_menu = tk.Menu(self, tearoff=0)
-        self.dropdown_menu.add_command(label="Команды", command=lambda: self.add_log_message("Нажата кнопка: Команды"))
+        # Добавляем заголовок и кнопку настроек
+        header_left_frame = ctk.CTkFrame(header_frame, fg_color="transparent", height=60)
+        header_left_frame.place(x=20, y=18)
+        
+        header_title = ctk.CTkLabel(header_left_frame, text="Панель управления", 
+                                 font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                                 text_color=self.text_color)
+        header_title.pack(side="left")
+        
+        # Добавляем кнопку настроек
+        settings_button = ctk.CTkButton(header_left_frame, 
+                                   text="Настройки", 
+                                   font=ctk.CTkFont(family="Segoe UI", size=13),
+                                   fg_color="transparent",
+                                   text_color=self.secondary_text,
+                                   hover_color=self.input_bg,
+                                   height=28,
+                                   width=20,
+                                   corner_radius=6,
+                                   command=lambda: self.add_log_message("Нажата кнопка настроек"))
+        settings_button.pack(side="left", padx=(15, 0))
+        
+        # Создаем выпадающее меню с улучшенным стилем
+        self.dropdown_menu = tk.Menu(self, tearoff=0, bg=self.dark_bg, fg=self.text_color, 
+                               activebackground=self.primary_blue, activeforeground="white",
+                               relief="solid", bd=1, font=("Segoe UI", 11))
+        
+        # Привязываем кнопки к соответствующим методам
+        self.dropdown_menu.add_command(label="Команды", command=self.show_commands_screen)
         self.dropdown_menu.add_command(label="Добавить", command=lambda: self.add_log_message("Нажата кнопка: Добавить"))
+        self.dropdown_menu.add_command(label="Настройки", command=lambda: self.add_log_message("Нажата кнопка: Настройки"))
+        self.dropdown_menu.add_separator()
         self.dropdown_menu.add_command(label="NexusTG", command=lambda: self.add_log_message("Нажата кнопка: NexusTG"))
         
-        # Add project icon to header as a button
-        logo_button_frame = ctk.CTkFrame(header_frame, fg_color="transparent", width=50, height=50)
-        logo_button_frame.place(x=20, y=5)
+        # Фрейм для кнопок справа
+        right_buttons_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        right_buttons_frame.place(relx=0.98, y=30, anchor="e")
+        
+        # Добавляем кнопку остановки/запуска бота
+        self.toggle_bot_button = ctk.CTkButton(right_buttons_frame, 
+                                          text="Остановить", 
+                                          font=ctk.CTkFont(family="Segoe UI", size=14),
+                                          fg_color=self.primary_blue,
+                                          hover_color="#1565c0",
+                                          height=32,
+                                          corner_radius=8,
+                                          command=self.toggle_bot_status)
+        self.toggle_bot_button.pack(side="left", padx=(0, 15))
+        
+        # Добавляем кнопку с иконкой проекта справа
+        logo_button_frame = ctk.CTkFrame(right_buttons_frame, fg_color="transparent", width=40, height=40)
+        logo_button_frame.pack(side="left")
         
         # Создаем канвас для иконки
         self.project_logo_canvas = ctk.CTkCanvas(logo_button_frame, width=40, height=40, 
                                        bg=self.input_bg, highlightthickness=0)
         self.project_logo_canvas.pack()
         
-        # Рисуем иконку проекта
-        self.project_logo_canvas.create_oval(5, 5, 35, 35, fill=self.primary_blue, outline="", tags="logo")
+        # Рисуем иконку проекта с улучшенным дизайном
+        # Внешний круг с градиентным эффектом
+        for i in range(3):
+            self.project_logo_canvas.create_oval(
+                5 + i, 5 + i, 35 - i, 35 - i, 
+                fill="" if i < 2 else self.primary_blue, 
+                outline=self.primary_blue, 
+                width=1,
+                tags="logo"
+            )
+        
+        # Внутренний круг
         self.project_logo_canvas.create_oval(10, 10, 30, 30, fill=self.dark_bg, outline="", tags="logo")
+        
+        # Текст на иконке
         self.project_logo_canvas.create_text(20, 20, text="NT", fill=self.text_color, 
                                     font=("Segoe UI", 14, "bold"), tags="logo")
         
@@ -600,28 +655,6 @@ class NexusTGApp(ctk.CTk):
         
         # Привязываем нажатие к показу меню
         self.project_logo_canvas.bind("<Button-1>", show_menu)
-        
-        # Add status indicator only (without text)
-        status_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        status_frame.place(relx=0.98, y=30, anchor="e")
-        
-        # Только индикатор без текста
-        self.status_indicator = ctk.CTkLabel(status_frame, text="●", 
-                                font=ctk.CTkFont(size=20),
-                                text_color=self.accent_green)
-        self.status_indicator.pack(side="left", padx=(0, 20))
-        
-        # Добавляем кнопку остановки/запуска бота
-        self.toggle_bot_button = ctk.CTkButton(header_frame, 
-                                          text="Остановить", 
-                                          font=ctk.CTkFont(size=14),
-                                          fg_color=self.primary_blue,
-                                          hover_color="#1976D2",
-                                          width=120,
-                                          height=32,
-                                          corner_radius=16,
-                                          command=self.toggle_bot_status)
-        self.toggle_bot_button.place(relx=0.85, y=30, anchor="e")
         
         # Main content area
         content_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
@@ -702,15 +735,13 @@ class NexusTGApp(ctk.CTk):
         if hasattr(self, 'bot') and self.bot.is_running:
             # Останавливаем бота
             threading.Thread(target=self.stop_bot, daemon=True).start()
-            self.toggle_bot_button.configure(text="Запустить", fg_color="#28a745")
-            self.status_indicator.configure(text_color="#FF5252")
+            self.toggle_bot_button.configure(text="Запустить", fg_color="#28a745", hover_color="#218838")
             self.bot_status_info.configure(text="Статус: Остановлен")
             self.add_log_message("Бот остановлен")
         else:
             # Запускаем бота снова
             threading.Thread(target=self.restart_bot, daemon=True).start()
-            self.toggle_bot_button.configure(text="Остановить", fg_color=self.primary_blue)
-            self.status_indicator.configure(text_color=self.accent_green)
+            self.toggle_bot_button.configure(text="Остановить", fg_color=self.primary_blue, hover_color="#1565c0")
             self.bot_status_info.configure(text="Статус: Активен")
             self.add_log_message("Бот запущен")
     
@@ -875,29 +906,139 @@ class NexusTGApp(ctk.CTk):
             
     def add_context_menu(self, entry_widget):
         """Добавляет контекстное меню к виджету ввода"""
-        # Создаем контекстное меню
-        context_menu = tk.Menu(self, tearoff=0)
-        context_menu.add_command(label="Вставить", command=lambda: self.paste_to_entry(entry_widget))
-        
-        # Функция для отображения контекстного меню
-        def show_context_menu(event):
-            # Отображаем меню в позиции курсора мыши
-            context_menu.post(event.x_root, event.y_root)
-        
-        # Привязываем правую кнопку мыши к отображению меню
-        entry_widget.bind("<Button-3>", show_context_menu)
+        context_menu = tk.Menu(self, tearoff=0, bg=self.dark_bg, fg=self.text_color)
+        context_menu.add_command(label="Вставить", command=lambda: self.paste_to_widget(entry_widget))
+        context_menu.add_command(label="Копировать", command=lambda: self.copy_from_widget(entry_widget))
+        context_menu.add_command(label="Вырезать", command=lambda: self.cut_from_widget(entry_widget))
+
+        entry_widget.bind("<Button-3>", lambda e: self.show_context_menu(e, context_menu))
+    def show_context_menu(self, event, menu):
+        """Показывает контекстное меню"""
+        menu.post(event.x_root, event.y_root)
     
-    def paste_to_entry(self, entry_widget):
-        """Вставляет текст из буфера обмена в поле ввода"""
+    def paste_to_widget(self, widget):
+        """Вставляет текст из буфера обмена в виджет"""
         try:
-            # Получаем текст из буфера обмена
             clipboard_text = self.clipboard_get()
-            # Вставляем текст в поле ввода
-            entry_widget.delete(0, tk.END)  # Очищаем текущее содержимое
-            entry_widget.insert(0, clipboard_text)  # Вставляем новый текст
-        except tk.TclError:
-            # Буфер обмена пуст или содержит нетекстовые данные
-            pass
+            # Вставка текста в позицию курсора
+            widget.insert("insert", clipboard_text)
+        except Exception as e:
+            print(f"Ошибка при вставке: {str(e)}")
+    
+    def copy_from_widget(self, widget):
+        """Копирует выделенный текст из виджета в буфер обмена"""
+        try:
+            if widget.selection_get():
+                self.clipboard_clear()
+                self.clipboard_append(widget.selection_get())
+        except Exception as e:
+            print(f"Ошибка при копировании: {str(e)}")
+    
+    def cut_from_widget(self, widget):
+        """Вырезает выделенный текст из виджета в буфер обмена"""
+        try:
+            if widget.selection_get():
+                self.clipboard_clear()
+                self.clipboard_append(widget.selection_get())
+                widget.delete("sel.first", "sel.last")
+        except Exception as e:
+            print(f"Ошибка при вырезании: {str(e)}")
+            
+    def show_commands_screen(self):
+        """Показывает экран с командами бота"""
+        # Очищаем текущее содержимое
+        for widget in self.main_frame.winfo_children():
+            widget.destroy()
+            
+        # Создаем верхнюю панель с кнопкой возврата
+        header_frame = ctk.CTkFrame(self.main_frame, fg_color=self.input_bg, height=60)
+        header_frame.pack(fill="x", padx=0, pady=0)
+        
+        # Кнопка возврата
+        back_button = ctk.CTkButton(header_frame, 
+                                text="Назад", 
+                                font=ctk.CTkFont(family="Segoe UI", size=13),
+                                fg_color="transparent",
+                                text_color=self.secondary_text,
+                                hover_color=self.input_bg,
+                                height=28,
+                                corner_radius=6,
+                                command=self.create_operation_screen)
+        back_button.place(x=20, y=18)
+        
+        # Заголовок экрана
+        title_label = ctk.CTkLabel(header_frame, text="Команды бота", 
+                               font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
+                               text_color=self.text_color)
+        title_label.place(relx=0.5, y=30, anchor="center")
+        
+        # Основной контейнер
+        main_container = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        main_container.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Информационный текст
+        info_label = ctk.CTkLabel(main_container, 
+                              text="Список доступных команд бота:",
+                              font=ctk.CTkFont(family="Segoe UI", size=16),
+                              text_color=self.text_color)
+        info_label.pack(anchor="w", pady=(0, 20))
+        
+        # Карточка команды /start
+        command_card = ctk.CTkFrame(main_container, fg_color=self.input_bg, corner_radius=10)
+        command_card.pack(fill="x", pady=5)
+        
+        # Заголовок команды
+        command_title = ctk.CTkLabel(command_card, 
+                                 text="/start",
+                                 font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                                 text_color=self.primary_blue)
+        command_title.pack(anchor="w", padx=20, pady=(15, 5))
+        
+        # Описание команды
+        command_desc = ctk.CTkLabel(command_card, 
+                               text="Запуск бота, показ приветственного сообщения и проверка доступа.",
+                               font=ctk.CTkFont(family="Segoe UI", size=14),
+                               text_color=self.secondary_text)
+        command_desc.pack(anchor="w", padx=20, pady=(0, 5))
+        
+        # Использование
+        usage_title = ctk.CTkLabel(command_card, 
+                              text="Использование:", 
+                              font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+                              text_color=self.text_color)
+        usage_title.pack(anchor="w", padx=20, pady=(10, 5))
+        
+        # Пример использования
+        usage_example = ctk.CTkLabel(command_card, 
+                                text="Отправьте боту команду /start",
+                                font=ctk.CTkFont(family="Segoe UI", size=14),
+                                text_color=self.secondary_text)
+        usage_example.pack(anchor="w", padx=20, pady=(0, 15))
+        
+        # Дополнительная информация
+        info_frame = ctk.CTkFrame(main_container, fg_color=self.input_bg, corner_radius=10)
+        info_frame.pack(fill="x", pady=(20, 5))
+        
+        # Заголовок информации
+        info_title = ctk.CTkLabel(info_frame, 
+                              text="Информация о боте",
+                              font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                              text_color=self.text_color)
+        info_title.pack(anchor="w", padx=20, pady=(15, 10))
+        
+        # Содержимое информации
+        bot_info_text = """NexusTG предоставляет удобный интерфейс для управления компьютером через Telegram. 
+В настоящее время доступна только базовая команда /start для инициализации бота.
+
+В будущих обновлениях будут добавлены новые команды для удаленного управления компьютером."""
+        
+        info_content = ctk.CTkTextbox(info_frame, fg_color=self.input_bg, 
+                                 text_color=self.secondary_text, 
+                                 font=ctk.CTkFont(family="Segoe UI", size=14),
+                                 height=100, activate_scrollbars=True)
+        info_content.pack(fill="x", padx=20, pady=(0, 15))
+        info_content.insert("1.0", bot_info_text)
+        info_content.configure(state="disabled")
 
     def check_existing_config(self):
         """Проверка наличия файла конфигурации и автоматический запуск"""

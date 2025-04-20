@@ -39,12 +39,24 @@ def register_commands(app: Application, config: Config, message_callback: Option
         config: Конфигурация бота
         message_callback: Функция для логирования сообщений
     """
-    # Только команда start
-    app.add_handler(CommandHandler("start", lambda update, context: start_command(update, context, config, message_callback)))
+    # Логируем регистрацию команд
+    logger.info("Регистрация команд бота")
+    if message_callback:
+        message_callback("Регистрация команд бота")
     
-    # Обработка сообщений, которые не являются командами
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, 
-                                 lambda update, context: handle_message(update, context, config, message_callback)))
+    # Используем прямые функции вместо lambda для улучшения производительности
+    # регистрируем команду /start
+    async def start_handler(update, context):
+        await start_command(update, context, config, message_callback)
+    app.add_handler(CommandHandler("start", start_handler))
+    
+    # регистрируем обработчик текстовых сообщений
+    async def message_handler(update, context):
+        await handle_message(update, context, config, message_callback)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+    
+    # Выводим информацию о зарегистрированных командах
+    logger.info("Команды успешно зарегистрированы")
 
 # Проверка, является ли пользователь владельцем
 def is_owner(update: Update, config: Config) -> bool:
@@ -55,35 +67,84 @@ def is_owner(update: Update, config: Config) -> bool:
 async def start_command(update: Update, context: CallbackContext, config: Config, 
                       message_callback: Optional[Callable[[str], None]] = None):
     """Обработка команды /start"""
-    user = update.effective_user
-    if not is_owner(update, config):
-        await update.message.reply_text(f"Извините, {user.first_name}, у вас нет доступа к этому боту.")
+    try:
+        user = update.effective_user
+        # Проверка прав доступа
+        if not is_owner(update, config):
+            await update.message.reply_text(
+                f"⛔ Извините, {user.first_name}, у вас нет доступа к этому боту.\n\n"
+                f"Ваш ID: {user.id} не включен в список авторизованных пользователей."
+            )
+            if message_callback:
+                message_callback(f"Попытка доступа от неавторизованного пользователя: {user.first_name} (ID: {user.id})")
+            return
+        
+        # Информация о компьютере для авторизованного пользователя
+        computer_name = socket.gethostname()
+        system_info = platform.platform()
+        
+        # Отправляем подробное приветственное сообщение
+        await update.message.reply_text(
+            f"👋 Привет, {user.first_name}!\n\n"
+            f"✅ Вы успешно подключились к NexusTG.\n\n"
+            f"💻 Информация о компьютере:\n"
+            f"• Имя: {computer_name}\n"
+            f"• Система: {system_info}\n\n"
+            f"🕒 Время подключения: {datetime.now().strftime('%H:%M:%S')}\n\n"
+            f"ℹ️ В данный момент доступна только команда /start. "
+            f"Дополнительные функции будут добавлены в будущих обновлениях."
+        )
+        
+        # Логирование успешного запуска
         if message_callback:
-            message_callback(f"Попытка доступа от неавторизованного пользователя: {user.first_name} (ID: {user.id})")
-        return
+            message_callback(f"Пользователь {user.first_name} (ID: {user.id}) успешно подключился к боту")
     
-    await update.message.reply_text(
-        f"Привет, {user.first_name}! Я бот для удаленного управления компьютером.\n"
-        f"Это учебный проект NexusTG."
-    )
-    if message_callback:
-        message_callback(f"Пользователь {user.first_name} начал использование бота")
+    except Exception as e:
+        # Отправляем сообщение об ошибке пользователю
+        error_message = f"Произошла ошибка при обработке команды: {str(e)}"
+        try:
+            await update.message.reply_text(f"❌ {error_message}")
+        except Exception:
+            pass  # Если сообщение не удалось отправить, просто игнорируем
+        
+        # Логируем ошибку
+        logger.error(error_message)
+        if message_callback:
+            message_callback(error_message)
 
 async def handle_message(update: Update, context: CallbackContext, config: Config, 
                        message_callback: Optional[Callable[[str], None]] = None):
     """Обработка обычных текстовых сообщений (не команд)"""
-    user = update.effective_user
-    if not is_owner(update, config):
-        await update.message.reply_text(f"Извините, {user.first_name}, у вас нет доступа к этому боту.")
-        return
+    try:
+        user = update.effective_user
+        if not is_owner(update, config):
+            await update.message.reply_text(
+                f"⛔ Извините, {user.first_name}, у вас нет доступа к этому боту.\n\n"
+                f"Ваш ID: {user.id} не включен в список авторизованных пользователей."
+            )
+            return
+        
+        text = update.message.text
+        
+        # Улучшенный ответ на текстовые сообщения
+        await update.message.reply_text(
+            f"📝 Получено сообщение: \"{text}\"\n\n"
+            f"ℹ️ В данный момент я поддерживаю только команду /start.\n"
+            f"Для получения справки отправьте /start."
+        )
+        
+        if message_callback:
+            message_callback(f"Получено сообщение от {user.first_name} (ID: {user.id}): {text}")
     
-    text = update.message.text
-    
-    # Простой ответ на текстовые сообщения
-    await update.message.reply_text(
-        f"Получено сообщение: {text}\n\n"
-        f"Это учебный проект NexusTG. Доступна только команда /start."
-    )
-    
-    if message_callback:
-        message_callback(f"Получено сообщение от {user.first_name}: {text}")
+    except Exception as e:
+        # Логирование ошибки
+        error_message = f"Ошибка при обработке сообщения: {str(e)}"
+        logger.error(error_message)
+        if message_callback:
+            message_callback(error_message)
+        
+        # Пытаемся отправить сообщение об ошибке пользователю
+        try:
+            await update.message.reply_text(f"❌ Произошла ошибка при обработке сообщения.")
+        except Exception:
+            pass  # Если сообщение не удалось отправить, просто игнорируем
