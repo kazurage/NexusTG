@@ -72,45 +72,51 @@ class TelegramBot:
             config = Config(self.token, self.owner_ids)
             
             # Проверяем валидность токена
-            if not await self._validate_token():
+            token_valid = await self._validate_token()
+            if not token_valid:
                 if self.error_callback:
                     self.error_callback("Неверный токен бота. Пожалуйста, проверьте и введите заново.")
                 return False
-            
+
             # Создаем приложение с правильными настройками
             builder = Application.builder().token(self.token)
             self.application = builder.build()
-            
-            # Регистрируем команды
-            register_commands(self.application, config, self.message_callback)
             
             # Логируем информацию
             logger.info("Инициализация бота...")
             if self.message_callback:
                 self.message_callback("Инициализация бота...")
-                
-            # Запускаем бота и начинаем обработку обновлений
+
+            # Регистрируем команды до инициализации
+            register_commands(self.application, config, self.message_callback)
+            
+            # Инициализируем и запускаем бота
             await self.application.initialize()
             await self.application.start()
             
-            # Запускаем polling - непрерывную проверку новых сообщений от Telegram
-            # Это ключевой момент, без которого бот не будет обрабатывать сообщения
-            await self.application.updater.start_polling()
+            # Запускаем polling с очисткой очереди обновлений
+            await self.application.updater.start_polling(
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True
+            )
             
             logger.info("Бот успешно запущен и готов к работе")
-            
-            # Устанавливаем флаг, что бот запущен
             self.is_running = True
             
             if self.success_callback:
                 self.success_callback("Бот успешно запущен и готов к работе")
-                
+            
+            # Запускаем бесконечный цикл для поддержания работы бота
+            while self.is_running:
+                await asyncio.sleep(1)
+            
             return True
             
         except Exception as e:
-            logger.error(f"Ошибка при запуске бота: {str(e)}")
+            error_msg = f"Ошибка при запуске бота: {str(e)}"
+            logger.error(error_msg)
             if self.error_callback:
-                self.error_callback(f"Ошибка при запуске бота: {str(e)}")
+                self.error_callback(error_msg)
             return False
     
     async def stop_bot(self):

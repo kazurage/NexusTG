@@ -833,12 +833,16 @@ class NexusTGApp(ctk.CTk):
         """Simulate a loading process"""
         # Запускаем бота в отдельном потоке
         threading.Thread(target=self.start_telegram_bot, daemon=True).start()
-        
+    
     def start_telegram_bot(self):
         """Запуск Telegram бота"""
         try:
-            # Установка значений прогресса
-            self.update_loading_progress("Подключение к Telegram...", 0.2)
+            def update_progress(text, progress):
+                """Вспомогательная функция для обновления прогресса в главном потоке"""
+                self.after(0, lambda: self.update_loading_progress(text, progress))
+                self.update()  # Принудительно обновляем GUI
+                
+            update_progress("Подключение к Telegram...", 0.2)
             time.sleep(0.5)
             
             # Создаем экземпляр бота
@@ -846,42 +850,38 @@ class NexusTGApp(ctk.CTk):
             
             # Устанавливаем колбэки для взаимодействия с GUI
             self.bot.set_callbacks(
-                error_callback=self.bot_error_callback,
-                success_callback=self.bot_success_callback,
-                message_callback=self.bot_message_callback
+                error_callback=lambda msg: self.after(0, lambda: self.show_error(msg)),
+                success_callback=lambda msg: self.after(0, lambda: self.add_log_message(msg)),
+                message_callback=lambda msg: self.after(0, lambda: self.add_log_message(msg))
             )
             
-            self.update_loading_progress("Проверка токена...", 0.4)
+            update_progress("Проверка токена...", 0.4)
             time.sleep(0.5)
             
-            # Создаем цикл событий для асинхронного запуска бота
+            # Создаем новый цикл событий для этого потока
             self.event_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.event_loop)
             
-            # Запуск бота и проверка валидности токена
+            # Запускаем бота
             success = self.event_loop.run_until_complete(self.bot.start_bot())
-            
             if not success:
-                # Если токен невалидный, показываем ошибку
-                self.after(0, lambda: self.show_error("Неверный токен бота. Пожалуйста, проверьте и введите заново."))
-                self.after(1500, self.create_config_screen)  # Возврат к экрану конфигурации
+                self.after(0, lambda: self.show_error("Не удалось запустить бота. Проверьте токен и попробуйте снова."))
+                self.after(1500, self.create_config_screen)
                 return
-            
-            # Продолжаем загрузку, если токен валидный
-            self.update_loading_progress("Загрузка компонентов...", 0.6)
+                
+            update_progress("Загрузка компонентов...", 0.6)
             time.sleep(0.5)
             
-            self.update_loading_progress("Инициализация бота...", 0.8)
+            update_progress("Инициализация бота...", 0.8)
             time.sleep(0.5)
             
-            self.update_loading_progress("Готово!", 1.0)
+            update_progress("Готово!", 1.0)
             time.sleep(0.5)
             
-            # Переход к основному экрану
-            self.after(500, self.loading_complete)
+            # После полной загрузки переходим к основному экрану
+            self.after(500, lambda: self.create_operation_screen())
             
         except Exception as e:
-            # В случае ошибки показываем сообщение и возвращаемся к экрану конфигурации
             error_message = f"Ошибка при запуске бота: {str(e)}"
             self.after(0, lambda: self.show_error(error_message))
             self.after(1500, self.create_config_screen)

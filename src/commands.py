@@ -44,19 +44,20 @@ def register_commands(app: Application, config: Config, message_callback: Option
     if message_callback:
         message_callback("Регистрация команд бота")
     
-    # Используем прямые функции вместо lambda для улучшения производительности
-    # регистрируем команду /start
-    async def start_handler(update, context):
+    # Создаем обработчики команд
+    async def start_command_handler(update: Update, context: CallbackContext):
         await start_command(update, context, config, message_callback)
-    app.add_handler(CommandHandler("start", start_handler))
-    
-    # регистрируем обработчик текстовых сообщений
-    async def message_handler(update, context):
+
+    async def message_handler(update: Update, context: CallbackContext):
         await handle_message(update, context, config, message_callback)
+
+    # Регистрируем обработчики
+    app.add_handler(CommandHandler("start", start_command_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
     
-    # Выводим информацию о зарегистрированных командах
     logger.info("Команды успешно зарегистрированы")
+    if message_callback:
+        message_callback("Команды бота успешно зарегистрированы")
 
 # Проверка, является ли пользователь владельцем
 def is_owner(update: Update, config: Config) -> bool:
