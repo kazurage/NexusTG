@@ -23,7 +23,7 @@ Just enter your bot token, run the bot, and start sending commands from Telegram
 ```
 NexusTG/
 ├── main.py            # Точка входа — здесь стартует программа
-├── .src/              # Исходный код (модули, классы, логика)
+├── src/              # Исходный код (модули, классы, логика)
 │   ├── __init__.py
 ├── templates/         # ( шаблоны или файлы )
 ├── cfg/               # ( конфигурация )

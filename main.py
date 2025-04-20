@@ -6,6 +6,12 @@ import time
 import threading
 import math
 import json
+import asyncio
+import sys
+
+# Добавляем текущую директорию в путь, чтобы импорты работали корректно
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from src.bot import TelegramBot
 
 # Set appearance mode and default color theme
 ctk.set_appearance_mode("dark")
@@ -44,25 +50,15 @@ class NexusTGApp(ctk.CTk):
         # Create initial welcome screen
         self.create_welcome_screen()
         
-        # Add fullscreen toggle button
-        self.fullscreen = False
-        self.fullscreen_button = ctk.CTkButton(self, 
-                                          text="⛶", 
-                                          font=ctk.CTkFont(size=16),
-                                          fg_color="transparent",
-                                          hover_color="#2A303C",
-                                          width=30,
-                                          height=30,
-                                          corner_radius=15,
-                                          command=self.toggle_fullscreen)
-        self.fullscreen_button.place(relx=0.97, rely=0.03, anchor="ne")
-        
         # Initialize configuration variables
         self.bot_token = ""
         self.owner_ids = []
         
         # Bind window resize event
         self.bind("<Configure>", self.on_window_resize)
+        
+        # Проверка наличия конфигурации и автоматический запуск
+        self.check_existing_config()
     
     def create_welcome_screen(self):
         """Create the welcome screen"""
@@ -167,15 +163,17 @@ class NexusTGApp(ctk.CTk):
         self.token_desc.pack(anchor="w", pady=(0, 10))
         
         self.token_entry = ctk.CTkEntry(self.token_frame, 
-                                    placeholder_text="Введите токен бота...",
-                                    width=400,
-                                    height=36,
-                                    border_width=1,
-                                    corner_radius=8,
-                                    fg_color=self.input_bg,
-                                    border_color=self.input_border,
-                                    text_color=self.text_color)
+                                placeholder_text="Введите токен бота...",
+                                width=400,
+                                height=36,
+                                border_width=1,
+                                corner_radius=8,
+                                fg_color=self.input_bg,
+                                border_color=self.input_border,
+                                text_color=self.text_color)
         self.token_entry.pack(anchor="w")
+        
+        self.add_context_menu(self.token_entry)
         
         # Owner IDs section
         self.owners_frame = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
@@ -223,7 +221,7 @@ class NexusTGApp(ctk.CTk):
                                      fg_color=self.primary_blue,
                                      hover_color="#1976D2",
                                      corner_radius=22,
-                                     command=self.save_config,
+                                     command=self.save_and_connect,
                                      width=180,
                                      height=44)
         self.save_button.pack(side="left", pady=10, padx=(0, 10))
@@ -282,9 +280,11 @@ class NexusTGApp(ctk.CTk):
                                       command=lambda f=entry_frame: self.remove_owner_entry(f))
             remove_button.pack(side="left", padx=(10, 0))
         
-        self.owner_entries.append(entry)
+        self.owner_entries.append({"frame": entry_frame, "entry": entry})
         
-        # Update add button state
+        self.add_context_menu(entry)
+        
+        # Disable add button if maximum reached
         if len(self.owner_entries) >= 3:
             self.add_owner_button.configure(state="disabled")
     
@@ -302,153 +302,80 @@ class NexusTGApp(ctk.CTk):
         # Re-enable add button
         self.add_owner_button.configure(state="normal")
     
-    def create_logo(self):
-        """Create a smooth, anti-aliased logo"""
-        self.logo_canvas.delete("all")
-        
-        # Draw outer circle with smoother edges
-        self.logo_canvas.create_oval(10, 10, 110, 110, fill=self.primary_blue, outline="", tags="logo")
-        
-        # Draw inner circle
-        self.logo_canvas.create_oval(20, 20, 100, 100, fill=self.dark_bg, outline="", tags="logo")
-        
-        # Draw "NT" letters with better positioning and font
-        self.logo_canvas.create_text(60, 60, text="NT",
-                                font=("Segoe UI", 32, "bold"),
-                                fill=self.text_color, tags="logo")
-    
-    def create_small_logo(self):
-        """Create a smaller version of the logo for the header"""
-        self.small_logo_canvas.delete("all")
-        
-        # Draw outer circle
-        self.small_logo_canvas.create_oval(5, 5, 35, 35, fill=self.primary_blue, outline="", tags="logo")
-        
-        # Draw inner circle
-        self.small_logo_canvas.create_oval(8, 8, 32, 32, fill=self.dark_bg, outline="", tags="logo")
-        
-        # Draw "NT" letters
-        self.small_logo_canvas.create_text(20, 20, text="NT",
-                                      font=("Segoe UI", 12, "bold"),
-                                      fill=self.text_color, tags="logo")
-    
-    def animate_arc(self):
-        """Animate a rotating arc around the logo"""
-        self.logo_canvas.delete("arc")
-        
-        # Create a rotating arc
-        arc_thickness = 2
-        radius = 55
-        
-        # Convert angles to coordinates
-        x0 = 60 - radius - arc_thickness
-        y0 = 60 - radius - arc_thickness
-        x1 = 60 + radius + arc_thickness
-        y1 = 60 + radius + arc_thickness
-        
-        self.logo_canvas.create_arc(
-            x0, y0, x1, y1,
-            start=self.arc_angle, extent=45,
-            style=tk.ARC, width=arc_thickness,
-            outline=self.accent_green, tags="arc")
-        
-        # Update angle for next animation
-        self.arc_angle = (self.arc_angle + 2) % 360
-        
-        # Only continue animation if canvas still exists
-        if self.logo_canvas.winfo_exists():
-            self.after(50, self.animate_arc)
-    
-    def animate_small_arc(self):
-        """Animate a rotating arc around the small logo"""
-        if hasattr(self, 'small_logo_canvas'):
-            self.small_logo_canvas.delete("arc")
-            
-            # Create a rotating arc
-            arc_thickness = 1
-            radius = 18
-            
-            # Convert angles to coordinates
-            x0 = 20 - radius - arc_thickness
-            y0 = 20 - radius - arc_thickness
-            x1 = 20 + radius + arc_thickness
-            y1 = 20 + radius + arc_thickness
-            
-            self.small_logo_canvas.create_arc(
-                x0, y0, x1, y1,
-                start=self.small_arc_angle, extent=45,
-                style=tk.ARC, width=arc_thickness,
-                outline=self.accent_green, tags="arc")
-            
-            # Update angle for next animation
-            self.small_arc_angle = (self.small_arc_angle + 2) % 360
-            
-            # Only continue animation if canvas still exists
-            if self.small_logo_canvas.winfo_exists():
-                self.after(50, self.animate_small_arc)
-    
-    def start_button_clicked(self):
-        """Handle start button click"""
-        # Simple visual feedback
-        original_color = self.primary_blue
-        self.start_button.configure(fg_color=self.accent_green)
-        self.update()
-        
-        # Reset button color after delay
-        self.after(200, lambda: self.start_button.configure(fg_color=original_color))
-        
-        # Switch to configuration screen
-        self.after(300, self.create_config_screen)
-    
     def save_config(self):
         """Save the configuration"""
-        # Get bot token
-        bot_token = self.token_entry.get().strip()
-        
-        # Get owner IDs (non-empty)
-        owner_ids = []
-        for entry in self.owner_entries:
-            owner_id = entry.get().strip()
-            if owner_id:
-                owner_ids.append(owner_id)
-        
-        # Validate inputs (simple validation)
-        if not bot_token:
-            self.show_error("Введите токен бота")
-            return
+        # Если мы на экране конфигурации, получаем значения из полей ввода
+        if hasattr(self, 'token_entry') and self.token_entry.winfo_exists():
+            bot_token = self.token_entry.get().strip()
             
-        if not owner_ids:
-            self.show_error("Добавьте хотя бы одного владельца")
-            return
+            # Получаем ID владельцев (не пустые)
+            owner_ids = []
+            for owner_item in self.owner_entries:
+                # Получаем виджет ввода из словаря
+                entry_widget = owner_item.get("entry")
+                if entry_widget and entry_widget.winfo_exists():
+                    owner_id = entry_widget.get().strip()
+                    if owner_id:
+                        owner_ids.append(owner_id)
+            
+            # Валидация ввода
+            if not bot_token:
+                self.show_error("Введите токен бота")
+                return False
+                
+            if not owner_ids:
+                self.show_error("Добавьте хотя бы одного владельца")
+                return False
+            
+            # Сохраняем конфигурацию
+            self.bot_token = bot_token
+            self.owner_ids = owner_ids
         
-        # Store the configuration
-        self.bot_token = bot_token
-        self.owner_ids = owner_ids
-        
-        # Save to config file
+        # Если мы перешли с первого экрана, используем имеющиеся значения
+        # Сохраняем в файл конфигурации
         config = {
-            "bot_token": bot_token,
-            "owner_ids": owner_ids
+            "bot_token": self.bot_token,
+            "owner_ids": self.owner_ids
         }
         
         try:
-            # Create cfg directory if not exists
+            # Создаем директорию cfg, если не существует
             if not os.path.exists("cfg"):
                 os.makedirs("cfg")
                 
             with open("cfg/config.json", "w") as file:
                 json.dump(config, file, indent=4)
                 
-            # Show success message
-            self.show_success("Конфигурация успешно сохранена")
-            
-            # Here you would proceed to the next screen or start the bot
-            # For now, we'll just go back to the welcome screen
-            self.after(1500, self.create_welcome_screen)
+            return True
             
         except Exception as e:
             self.show_error(f"Ошибка при сохранении: {str(e)}")
+            return False
+            
+    def save_and_connect(self):
+        """Save configuration and proceed to loading screen"""
+        # Сохраняем конфигурацию
+        if self.save_config():
+            # Показываем экран загрузки
+            self.create_loading_screen()
+            
+            # Запускаем бота и проверяем валидность токена в отдельном потоке
+            loading_thread = threading.Thread(target=self.simulate_loading)
+            loading_thread.daemon = True
+            loading_thread.start()
     
+    def on_window_resize(self, event):
+        """Handle window resize events"""
+        # Only update layout if the event is from the main window
+        if event.widget == self:
+            # Update description wraplength based on window width if on welcome screen
+            if hasattr(self, 'description_label') and self.description_label.winfo_exists():
+                window_width = event.width
+                if window_width > 600:
+                    self.description_label.configure(wraplength=500)
+                else:
+                    self.description_label.configure(wraplength=window_width * 0.8)
+                    
     def show_error(self, message):
         """Show error message"""
         error_window = ctk.CTkToplevel(self)
@@ -484,62 +411,507 @@ class NexusTGApp(ctk.CTk):
         error_window.grab_set()
         self.wait_window(error_window)
     
-    def show_success(self, message):
-        """Show success message"""
-        success_window = ctk.CTkToplevel(self)
-        success_window.title("Успех")
-        success_window.geometry("350x150")
-        success_window.resizable(False, False)
-        success_window.configure(fg_color=self.dark_bg)
+    def create_logo(self):
+        """Create a smooth, anti-aliased logo"""
+        self.logo_canvas.delete("all")
         
-        success_frame = ctk.CTkFrame(success_window, fg_color="transparent")
-        success_frame.pack(expand=True, fill="both", padx=20, pady=20)
+        # Draw outer circle
+        self.logo_canvas.create_oval(10, 10, 110, 110, fill=self.primary_blue, outline="", tags="logo")
+        # Draw inner circle
+        self.logo_canvas.create_oval(30, 30, 90, 90, fill=self.dark_bg, outline="", tags="logo")
+        # Draw "NT" letters
+        self.logo_canvas.create_text(60, 60, text="NT",
+                                 font=("Segoe UI", 30, "bold"),
+                                 fill=self.text_color, tags="logo")
         
-        success_label = ctk.CTkLabel(success_frame, text="✓ Успех", 
+        # Start animation
+        self.animate_arc()
+        
+    def create_small_logo(self):
+        """Create a smaller version of the logo for the header"""
+        self.small_logo_canvas.delete("all")
+        
+        # Draw outer circle
+        self.small_logo_canvas.create_oval(5, 5, 35, 35, fill=self.primary_blue, outline="", tags="logo")
+        
+        # Draw inner circle
+        self.small_logo_canvas.create_oval(8, 8, 32, 32, fill=self.dark_bg, outline="", tags="logo")
+        
+        # Draw "NT" letters
+        self.small_logo_canvas.create_text(20, 20, text="NT",
+                                      font=("Segoe UI", 12, "bold"),
+                                      fill=self.text_color, tags="logo")
+    
+    def animate_arc(self):
+        """Animate a rotating arc around the logo"""
+        try:
+            if hasattr(self, 'logo_canvas') and self.logo_canvas.winfo_exists():
+                self.logo_canvas.delete("arc")
+                
+                # Create a rotating arc
+                arc_thickness = 2
+                radius = 55
+                
+                # Convert angles to coordinates
+                x0 = 60 - radius - arc_thickness
+                y0 = 60 - radius - arc_thickness
+                x1 = 60 + radius + arc_thickness
+                y1 = 60 + radius + arc_thickness
+                
+                self.logo_canvas.create_arc(
+                    x0, y0, x1, y1,
+                    start=self.arc_angle, extent=45,
+                    style=tk.ARC, width=arc_thickness,
+                    outline=self.accent_green, tags="arc")
+                
+                # Update angle for next animation
+                self.arc_angle = (self.arc_angle + 2) % 360
+                
+                # Only continue animation if canvas still exists
+                if self.logo_canvas.winfo_exists():
+                    self.after(50, self.animate_arc)
+        except Exception:
+            # Если произошла ошибка, например, канвас был удален, просто игнорируем
+            pass
+    
+    def animate_small_arc(self):
+        """Animate a rotating arc around the small logo"""
+        # Безопасная проверка существования канваса перед использованием
+        try:
+            if hasattr(self, 'small_logo_canvas') and self.small_logo_canvas.winfo_exists():
+                self.small_logo_canvas.delete("arc")
+                
+                # Create a rotating arc
+                arc_thickness = 1
+                radius = 18
+                
+                # Convert angles to coordinates
+                x0 = 20 - radius - arc_thickness
+                y0 = 20 - radius - arc_thickness
+                x1 = 20 + radius + arc_thickness
+                y1 = 20 + radius + arc_thickness
+                
+                self.small_logo_canvas.create_arc(
+                    x0, y0, x1, y1,
+                    start=self.small_arc_angle, extent=45,
+                    style=tk.ARC, width=arc_thickness,
+                    outline=self.accent_green, tags="arc")
+                
+                self.small_arc_angle = (self.small_arc_angle + 2) % 360
+                
+                # Only continue animation if canvas still exists
+                if self.small_logo_canvas.winfo_exists():
+                    self.after(50, self.animate_small_arc)
+        except Exception:
+            # Если произошла ошибка, например, канвас был удален, просто игнорируем
+            pass
+    
+    def start_button_clicked(self):
+        """Handle start button click"""
+        # Простая визуальная обратная связь
+        self.start_button.configure(fg_color=self.accent_green)
+        self.update()
+        
+        # Задержка перед переходом к экрану загрузки для отображения изменения цвета кнопки
+        def show_loading_and_then_config():
+            # Показать короткую загрузку перед переходом к экрану конфигурации
+            self.create_initial_loading_screen()
+            # Перейти к экрану конфигурации после короткой анимации
+            self.after(800, self.create_config_screen)
+        
+        # Запустить последовательность действий через короткое время
+        self.after(200, show_loading_and_then_config)
+        
+    def create_initial_loading_screen(self):
+        """Показать короткую загрузку перед переходом к экрану конфигурации"""
+        # Очистить предыдущее содержимое
+        for widget in self.main_frame.winfo_children():
+            widget.destroy()
+        
+            current_time = time.strftime("%H:%M:%S")
+            self.log_text.configure(state="normal")
+            self.log_text.insert("end", f"[{current_time}] {message}\n")
+            self.log_text.see("end")  # Прокрутка к последнему сообщению
+            self.log_text.configure(state="disabled")
+    
+    def update_loading_progress(self, text, progress):
+        """Update loading progress UI"""
+        if hasattr(self, 'loading_text') and self.loading_text.winfo_exists():
+            self.loading_text.configure(text=text)
+            self.progress_bar.set(progress)
+            self.progress_text.configure(text=f"{int(progress * 100)}%")
+    
+    def loading_complete(self):
+        """Called when loading is complete"""
+        # Добавляем сообщение в лог вместо показа окна успеха
+        
+        # Переходим к основному экрану управления
+        self.create_operation_screen()
+    
+    def create_operation_screen(self):
+        """Create the main operation screen after successful loading"""
+        # Clear previous content
+        for widget in self.main_frame.winfo_children():
+            widget.destroy()
+        
+        # Create header with small logo
+        header_frame = ctk.CTkFrame(self.main_frame, fg_color=self.input_bg, height=60)
+        header_frame.pack(fill="x", padx=0, pady=0)
+        
+        # Создаем выпадающее меню
+        self.dropdown_menu = tk.Menu(self, tearoff=0)
+        self.dropdown_menu.add_command(label="Команды", command=lambda: self.add_log_message("Нажата кнопка: Команды"))
+        self.dropdown_menu.add_command(label="Добавить", command=lambda: self.add_log_message("Нажата кнопка: Добавить"))
+        self.dropdown_menu.add_command(label="NexusTG", command=lambda: self.add_log_message("Нажата кнопка: NexusTG"))
+        
+        # Add project icon to header as a button
+        logo_button_frame = ctk.CTkFrame(header_frame, fg_color="transparent", width=50, height=50)
+        logo_button_frame.place(x=20, y=5)
+        
+        # Создаем канвас для иконки
+        self.project_logo_canvas = ctk.CTkCanvas(logo_button_frame, width=40, height=40, 
+                                       bg=self.input_bg, highlightthickness=0)
+        self.project_logo_canvas.pack()
+        
+        # Рисуем иконку проекта
+        self.project_logo_canvas.create_oval(5, 5, 35, 35, fill=self.primary_blue, outline="", tags="logo")
+        self.project_logo_canvas.create_oval(10, 10, 30, 30, fill=self.dark_bg, outline="", tags="logo")
+        self.project_logo_canvas.create_text(20, 20, text="NT", fill=self.text_color, 
+                                    font=("Segoe UI", 14, "bold"), tags="logo")
+        
+        # Функция для показа выпадающего меню при нажатии на иконку
+        def show_menu(event):
+            self.dropdown_menu.post(event.x_root, event.y_root)
+        
+        # Привязываем нажатие к показу меню
+        self.project_logo_canvas.bind("<Button-1>", show_menu)
+        
+        # Add status indicator only (without text)
+        status_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        status_frame.place(relx=0.98, y=30, anchor="e")
+        
+        # Только индикатор без текста
+        self.status_indicator = ctk.CTkLabel(status_frame, text="●", 
+                                font=ctk.CTkFont(size=20),
+                                text_color=self.accent_green)
+        self.status_indicator.pack(side="left", padx=(0, 20))
+        
+        # Добавляем кнопку остановки/запуска бота
+        self.toggle_bot_button = ctk.CTkButton(header_frame, 
+                                          text="Остановить", 
+                                          font=ctk.CTkFont(size=14),
+                                          fg_color=self.primary_blue,
+                                          hover_color="#1976D2",
+                                          width=120,
+                                          height=32,
+                                          corner_radius=16,
+                                          command=self.toggle_bot_status)
+        self.toggle_bot_button.place(relx=0.85, y=30, anchor="e")
+        
+        # Main content area
+        content_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        content_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Info panel
+        info_frame = ctk.CTkFrame(content_frame, fg_color=self.input_bg, corner_radius=10)
+        info_frame.pack(fill="x", padx=10, pady=10)
+        
+        # Bot info
+        bot_info_label = ctk.CTkLabel(info_frame, text="Информация о боте", 
                                  font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
-                                 text_color=self.accent_green)
-        success_label.pack(pady=(0, 10))
-        
-        message_label = ctk.CTkLabel(success_frame, text=message, 
-                                 font=ctk.CTkFont(family="Segoe UI", size=14),
                                  text_color=self.text_color)
-        message_label.pack(pady=(0, 15))
+        bot_info_label.pack(anchor="w", padx=20, pady=(15, 10))
         
-        ok_button = ctk.CTkButton(success_frame, text="OK", 
+        # Get token without full display for security
+        token_display = self.bot_token[:6] + "..." + self.bot_token[-4:]
+        token_info = ctk.CTkLabel(info_frame, 
+                             text=f"Токен: {token_display}", 
                              font=ctk.CTkFont(family="Segoe UI", size=14),
-                             fg_color=self.accent_green,
-                             hover_color="#09B374",
-                             corner_radius=8,
-                             command=success_window.destroy,
-                             width=100)
-        ok_button.pack()
+                             text_color=self.secondary_text)
+        token_info.pack(anchor="w", padx=20, pady=2)
         
-        # Make modal and auto-close
-        success_window.transient(self)
-        success_window.after(1500, success_window.destroy)
-    
-    def toggle_fullscreen(self):
-        """Toggle fullscreen mode"""
-        self.fullscreen = not self.fullscreen
-        self.attributes("-fullscreen", self.fullscreen)
+        # Owner IDs info
+        owner_count = len(self.owner_ids)
+        owners_info = ctk.CTkLabel(info_frame, 
+                              text=f"Владельцев: {owner_count}", 
+                              font=ctk.CTkFont(family="Segoe UI", size=14),
+                              text_color=self.secondary_text)
+        owners_info.pack(anchor="w", padx=20, pady=2)
         
-        # Change button text based on state
-        if self.fullscreen:
-            self.fullscreen_button.configure(text="⮌")
+        # Status info
+        self.bot_status_info = ctk.CTkLabel(info_frame, 
+                              text=f"Статус: Активен", 
+                              font=ctk.CTkFont(family="Segoe UI", size=14),
+                              text_color=self.secondary_text)
+        self.bot_status_info.pack(anchor="w", padx=20, pady=(2, 15))
+        
+        # Command log area
+        log_frame = ctk.CTkFrame(content_frame, fg_color=self.input_bg, corner_radius=10)
+        log_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        log_label = ctk.CTkLabel(log_frame, text="Лог команд", 
+                             font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                             text_color=self.text_color)
+        log_label.pack(anchor="w", padx=20, pady=(15, 10))
+        
+        # Create a text area for the logs with scrollbar
+        log_container = ctk.CTkFrame(log_frame, fg_color="transparent")
+        log_container.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+        
+        scrollbar = ctk.CTkScrollbar(log_container)
+        scrollbar.pack(side="right", fill="y")
+        
+        self.log_text = tk.Text(log_container, wrap="word", bg=self.dark_bg,
+                         fg=self.text_color, insertbackground=self.text_color,
+                         height=10, bd=0, font=("Consolas", 12))
+        self.log_text.pack(side="left", fill="both", expand=True)
+        
+        # Connect scrollbar to text widget
+        scrollbar.configure(command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=scrollbar.set)
+        
+        # Добавляем информативные логи
+        current_time = time.strftime("%H:%M:%S")
+        self.log_text.insert("end", f"[{current_time}] Приложение NexusTG запущено\n")
+        
+        # Добавляем информацию о боте, если она есть
+        if hasattr(self, 'bot_info') and self.bot_info:
+            self.log_text.insert("end", f"[{current_time}] {self.bot_info}\n")
+        
+        self.log_text.insert("end", f"[{current_time}] Бот готов к работе. Доступна команда /start\n")
+        self.log_text.see("end")  # Прокрутка к последнему сообщению
+        self.log_text.configure(state="disabled")  # Make read-only
+        
+    def toggle_bot_status(self):
+        """Переключение статуса бота (остановка/запуск)"""
+        if hasattr(self, 'bot') and self.bot.is_running:
+            # Останавливаем бота
+            threading.Thread(target=self.stop_bot, daemon=True).start()
+            self.toggle_bot_button.configure(text="Запустить", fg_color="#28a745")
+            self.status_indicator.configure(text_color="#FF5252")
+            self.bot_status_info.configure(text="Статус: Остановлен")
+            self.add_log_message("Бот остановлен")
         else:
-            self.fullscreen_button.configure(text="⛶")
+            # Запускаем бота снова
+            threading.Thread(target=self.restart_bot, daemon=True).start()
+            self.toggle_bot_button.configure(text="Остановить", fg_color=self.primary_blue)
+            self.status_indicator.configure(text_color=self.accent_green)
+            self.bot_status_info.configure(text="Статус: Активен")
+            self.add_log_message("Бот запущен")
     
-    def on_window_resize(self, event):
-        """Handle window resize events"""
-        # Only update layout if the event is from the main window
-        if event.widget == self:
-            # Update description wraplength based on window width if on welcome screen
-            if hasattr(self, 'description_label') and self.description_label.winfo_exists():
-                window_width = event.width
-                if window_width > 600:
-                    self.description_label.configure(wraplength=500)
-                else:
-                    self.description_label.configure(wraplength=window_width * 0.8)
+    def stop_bot(self):
+        """Остановка бота"""
+        if hasattr(self, 'bot') and self.event_loop:
+            self.event_loop.run_until_complete(self.bot.stop_bot())
+    
+    def restart_bot(self):
+        """Перезапуск бота"""
+        if hasattr(self, 'bot'):
+            # Запускаем бота снова
+            self.event_loop.run_until_complete(self.bot.start_bot())
+    
+    def add_log_message(self, message):
+        """Добавление сообщения в лог"""
+        if hasattr(self, 'log_text') and self.log_text.winfo_exists():
+            current_time = time.strftime("%H:%M:%S")
+            self.log_text.configure(state="normal")
+            self.log_text.insert("end", f"[{current_time}] {message}\n")
+            self.log_text.see("end")  # Прокрутка к последнему сообщению
+            self.log_text.configure(state="disabled")
+    
+    def create_loading_screen(self):
+        """Create an animated loading screen"""
+        # Clear previous content
+        for widget in self.main_frame.winfo_children():
+            widget.destroy()
+        
+        # Create content frame (centered)
+        self.loading_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.loading_frame.place(relx=0.5, rely=0.5, anchor="center")
+        
+        # Create small logo at the top
+        loading_logo_canvas = ctk.CTkCanvas(self.loading_frame, width=100, height=100, 
+                                        bg=self.dark_bg, highlightthickness=0)
+        loading_logo_canvas.pack(pady=(0, 20))
+        
+        # Draw logo directly instead of calling create_small_logo
+        # Draw outer circle
+        loading_logo_canvas.create_oval(10, 10, 90, 90, fill=self.primary_blue, outline="", tags="logo")
+        # Draw inner circle
+        loading_logo_canvas.create_oval(20, 20, 80, 80, fill=self.dark_bg, outline="", tags="logo")
+        # Draw "NT" letters
+        loading_logo_canvas.create_text(50, 50, text="NT",
+                                   font=("Segoe UI", 24, "bold"),
+                                   fill=self.text_color, tags="logo")
+        
+        # Create a rotating arc
+        arc_thickness = 2
+        radius = 45
+        
+        # Convert angles to coordinates
+        x0 = 50 - radius - arc_thickness
+        y0 = 50 - radius - arc_thickness
+        x1 = 50 + radius + arc_thickness
+        y1 = 50 + radius + arc_thickness
+        
+        loading_logo_canvas.create_arc(
+            x0, y0, x1, y1,
+            start=45, extent=45,
+            style=tk.ARC, width=arc_thickness,
+            outline=self.accent_green, tags="arc")
+        
+        # Brand name with styling
+        self.loading_brand_label = ctk.CTkLabel(self.loading_frame, text="NexusTG", 
+                                         font=ctk.CTkFont(family="Segoe UI", size=28, weight="bold"),
+                                         text_color=self.text_color)
+        self.loading_brand_label.pack(pady=(0, 30))
+        
+        # Loading text
+        self.loading_text = ctk.CTkLabel(self.loading_frame, text="Подключение к Telegram...", 
+                                     font=ctk.CTkFont(family="Segoe UI", size=14),
+                                     text_color=self.secondary_text)
+        self.loading_text.pack(pady=(0, 20))
+        
+        # Progress bar
+        self.progress_bar = ctk.CTkProgressBar(self.loading_frame, width=300, height=10)
+        self.progress_bar.pack(pady=(0, 10))
+        self.progress_bar.set(0)
+        
+        # Progress percentage
+        self.progress_text = ctk.CTkLabel(self.loading_frame, text="0%", 
+                                      font=ctk.CTkFont(family="Segoe UI", size=12),
+                                      text_color=self.secondary_text)
+        self.progress_text.pack()
+    
+    def simulate_loading(self):
+        """Simulate a loading process"""
+        # Запускаем бота в отдельном потоке
+        threading.Thread(target=self.start_telegram_bot, daemon=True).start()
+        
+    def start_telegram_bot(self):
+        """Запуск Telegram бота"""
+        try:
+            # Установка значений прогресса
+            self.update_loading_progress("Подключение к Telegram...", 0.2)
+            time.sleep(0.5)
+            
+            # Создаем экземпляр бота
+            self.bot = TelegramBot(self.bot_token, self.owner_ids)
+            
+            # Устанавливаем колбэки для взаимодействия с GUI
+            self.bot.set_callbacks(
+                error_callback=self.bot_error_callback,
+                success_callback=self.bot_success_callback,
+                message_callback=self.bot_message_callback
+            )
+            
+            self.update_loading_progress("Проверка токена...", 0.4)
+            time.sleep(0.5)
+            
+            # Создаем цикл событий для асинхронного запуска бота
+            self.event_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.event_loop)
+            
+            # Запуск бота и проверка валидности токена
+            success = self.event_loop.run_until_complete(self.bot.start_bot())
+            
+            if not success:
+                # Если токен невалидный, показываем ошибку
+                self.after(0, lambda: self.show_error("Неверный токен бота. Пожалуйста, проверьте и введите заново."))
+                self.after(1500, self.create_config_screen)  # Возврат к экрану конфигурации
+                return
+            
+            # Продолжаем загрузку, если токен валидный
+            self.update_loading_progress("Загрузка компонентов...", 0.6)
+            time.sleep(0.5)
+            
+            self.update_loading_progress("Инициализация бота...", 0.8)
+            time.sleep(0.5)
+            
+            self.update_loading_progress("Готово!", 1.0)
+            time.sleep(0.5)
+            
+            # Переход к основному экрану
+            self.after(500, self.loading_complete)
+            
+        except Exception as e:
+            # В случае ошибки показываем сообщение и возвращаемся к экрану конфигурации
+            error_message = f"Ошибка при запуске бота: {str(e)}"
+            self.after(0, lambda: self.show_error(error_message))
+            self.after(1500, self.create_config_screen)
+    
+    def bot_error_callback(self, message):
+        """Колбэк для обработки ошибок от бота"""
+        self.after(0, lambda: self.show_error(message))
+    
+    def bot_success_callback(self, message):
+        """Колбэк для обработки успешных действий от бота"""
+        # Добавляем сообщение в лог вместо показа окна успеха
+        self.after(0, lambda: self.add_log_message(message))
+        
+    def bot_message_callback(self, message):
+        """Колбэк для обработки сообщений от бота"""
+        # Добавляем сообщение в лог
+        self.after(0, lambda: self.add_log_message(message))
+        
+        # Если это информация о боте, сохраняем ее
+        if "Подключен к боту:" in message:
+            self.bot_info = message
+            
+    def add_context_menu(self, entry_widget):
+        """Добавляет контекстное меню к виджету ввода"""
+        # Создаем контекстное меню
+        context_menu = tk.Menu(self, tearoff=0)
+        context_menu.add_command(label="Вставить", command=lambda: self.paste_to_entry(entry_widget))
+        
+        # Функция для отображения контекстного меню
+        def show_context_menu(event):
+            # Отображаем меню в позиции курсора мыши
+            context_menu.post(event.x_root, event.y_root)
+        
+        # Привязываем правую кнопку мыши к отображению меню
+        entry_widget.bind("<Button-3>", show_context_menu)
+    
+    def paste_to_entry(self, entry_widget):
+        """Вставляет текст из буфера обмена в поле ввода"""
+        try:
+            # Получаем текст из буфера обмена
+            clipboard_text = self.clipboard_get()
+            # Вставляем текст в поле ввода
+            entry_widget.delete(0, tk.END)  # Очищаем текущее содержимое
+            entry_widget.insert(0, clipboard_text)  # Вставляем новый текст
+        except tk.TclError:
+            # Буфер обмена пуст или содержит нетекстовые данные
+            pass
+
+    def check_existing_config(self):
+        """Проверка наличия файла конфигурации и автоматический запуск"""
+        config_file = "cfg/config.json"
+        
+        if os.path.exists(config_file):
+            try:
+                # Загружаем конфигурацию из файла
+                with open(config_file, "r") as file:
+                    config = json.load(file)
+                
+                # Проверяем наличие необходимых данных
+                if "bot_token" in config and "owner_ids" in config:
+                    self.bot_token = config["bot_token"]
+                    self.owner_ids = config["owner_ids"]
+                    
+                    if self.bot_token and self.owner_ids:
+                        # Переходим сразу к экрану загрузки и запуску бота
+                        self.create_loading_screen()
+                        loading_thread = threading.Thread(target=self.start_telegram_bot)
+                        loading_thread.daemon = True
+                        loading_thread.start()
+                        return
+            except Exception as e:
+                # Если возникла ошибка при загрузке конфигурации, показываем экран приветствия
+                print(f"Ошибка при загрузке конфигурации: {str(e)}")
+                
+        # Если конфигурация не найдена или не валидна, показываем экран приветствия
+        # (этот код выполняется только если return выше не сработал)
 
 if __name__ == "__main__":
     app = NexusTGApp()
