@@ -74,3 +74,8 @@
 - [ ] Подключение к нескольким ПК
 
 ---
+
+При запуске кода в друггих устройствах вышла ошибка SSL сертификата 
+```error
+2025-04-21 11:02:09,870 - src.bot - ERROR - Ошибка при проверке токена: httpx.ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1028)
+```
