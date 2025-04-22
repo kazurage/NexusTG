@@ -737,24 +737,22 @@ class NexusTGApp(ctk.CTk):
         top_bar = ctk.CTkFrame(self.main_frame, fg_color=self.input_bg, height=60)
         top_bar.pack(fill="x", padx=0, pady=0)
         
-        # Logo and app name
-        logo_name_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
-        logo_name_frame.pack(side="left", padx=20)
+        # Панель управления вместо логотипа и имени
+        panel_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
+        panel_frame.pack(side="left", padx=20)
         
-        self.logo_button_frame = ctk.CTkFrame(logo_name_frame, fg_color="transparent", width=40, height=40)
-        self.logo_button_frame.pack(side="left", padx=(0, 10))
-        
-        # Create small logo
-        self.small_logo_canvas = ctk.CTkCanvas(self.logo_button_frame, width=40, height=40, 
-                                          bg=self.input_bg, highlightthickness=0)
-        self.small_logo_canvas.pack()
-        self.create_small_logo()
-        
-        # App name
-        app_name = ctk.CTkLabel(logo_name_frame, text="NexusTG", 
+        # Текст "Панель управление"
+        panel_label = ctk.CTkLabel(panel_frame, text="Панель управление", 
                            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
                            text_color=self.text_color)
-        app_name.pack(side="left")
+        panel_label.pack(side="left", padx=(0, 15))
+        
+        # "Настройки" в виде текста
+        settings_label = ctk.CTkLabel(panel_frame, 
+                                   text="Настройки", 
+                                   font=ctk.CTkFont(family="Segoe UI", size=16),
+                                   text_color=self.text_color)
+        settings_label.pack(side="left")
         
         # Инициализируем переменные для выпадающего меню
         self.custom_dropdown_visible = False
@@ -790,7 +788,7 @@ class NexusTGApp(ctk.CTk):
         
         # Создаем канвас для иконки
         self.project_logo_canvas = ctk.CTkCanvas(self.logo_button_frame, width=40, height=40, 
-                                       bg=self.input_bg, highlightthickness=0)
+                                        bg=self.input_bg, highlightthickness=0)
         self.project_logo_canvas.pack()
         
         # Рисуем иконку проекта с улучшенным дизайном
@@ -809,7 +807,7 @@ class NexusTGApp(ctk.CTk):
         
         # Текст на иконке
         self.project_logo_canvas.create_text(20, 20, text="NT", fill=self.text_color, 
-                                    font=("Segoe UI", 14, "bold"), tags="logo")
+                                     font=("Segoe UI", 14, "bold"), tags="logo")
         
         # Привязываем нажатие к показу меню
         self.project_logo_canvas.bind("<Button-1>", self.toggle_custom_dropdown)
@@ -892,19 +890,14 @@ class NexusTGApp(ctk.CTk):
         # Проверяем, есть ли сохраненная история логов
         if not self.log_history:
             # Если истории нет, добавляем стандартные сообщения
+            current_time = time.strftime("%H:%M:%S")
             startup_message = f"[{current_time}] Приложение NexusTG запущено"
             self.log_history.append(startup_message)
         
-        # Добавляем информацию о боте, если она есть
-        if hasattr(self, 'bot_info') and self.bot_info:
-            bot_info_message = f"[{current_time}] {self.bot_info}"
-            self.log_history.append(bot_info_message)
-            
-            ready_message = f"[{current_time}] Бот готов к работе. Доступна команда /start"
-            self.log_history.append(ready_message)
-        
+        # Удаляем дублирующиеся автоматические сообщения о боте
         # Отображаем сохраненную историю логов
         self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", "end")  # Очищаем текстовое поле перед выводом
         for log_entry in self.log_history:
             self.log_text.insert("end", f"{log_entry}\n")
         self.log_text.see("end")  # Прокрутка к последнему сообщению
@@ -1609,8 +1602,8 @@ class NexusTGApp(ctk.CTk):
     
     def show_about_dialog(self):
         """Показывает экран 'О программе' внутри основного окна"""
-        # Логируем действие
-        self.add_log_message("Открыт экран 'О программе'")
+        # Убираем логирование, чтобы избежать дублирования
+        # self.add_log_message("Открыт экран 'О программе'")
         
         # Очищаем предыдущее содержимое
         for widget in self.main_frame.winfo_children():
@@ -1654,7 +1647,7 @@ class NexusTGApp(ctk.CTk):
         # Анимированный логотип приложения (как на главном экране)
         logo_size = 90
         self.about_logo_canvas = ctk.CTkCanvas(logo_container, width=logo_size, height=logo_size, 
-                                          bg=self.dark_bg, highlightthickness=0)
+                                          bg="#1A202E", highlightthickness=0)
         self.about_logo_canvas.pack(pady=(0, 15))  # Увеличиваем отступ снизу
         
         # Рисуем логотип
@@ -1664,7 +1657,7 @@ class NexusTGApp(ctk.CTk):
         inner_offset = 18
         self.about_logo_canvas.create_oval(inner_offset, inner_offset, 
                                       logo_size-inner_offset, logo_size-inner_offset, 
-                                      fill=self.dark_bg, outline="", tags="logo")
+                                      fill="#1A202E", outline="", tags="logo")
         # Рисуем "NT" в логотипе
         self.about_logo_canvas.create_text(logo_size/2, logo_size/2, text="NT",
                                       font=("Segoe UI", 24, "bold"),
@@ -1864,7 +1857,7 @@ class NexusTGApp(ctk.CTk):
         
         # Кнопка Telegram-аккаунта
         tg_account_btn = ctk.CTkButton(dev_right, 
-                                  text="Telegram профиль", 
+                                  text="Telegram", 
                                   font=ctk.CTkFont(family="Segoe UI", size=14),
                                   fg_color=self.primary_blue,
                                   hover_color="#1565c0",
@@ -1884,7 +1877,19 @@ class NexusTGApp(ctk.CTk):
                                   height=38,
                                   width=180,
                                   command=lambda: webbrowser.open("https://t.me/INTkazurage"))
-        tg_channel_btn.pack()
+        tg_channel_btn.pack(pady=(0, 10))
+        
+        # Кнопка Github
+        github_btn = ctk.CTkButton(dev_right, 
+                                  text="Github", 
+                                  font=ctk.CTkFont(family="Segoe UI", size=14),
+                                  fg_color="#333333",
+                                  hover_color="#24292e",
+                                  corner_radius=10,
+                                  height=38,
+                                  width=180,
+                                  command=lambda: webbrowser.open("https://github.com/kazurage"))
+        github_btn.pack()
     
     def animate_about_logo_arc(self):
         """Анимирует дугу вокруг логотипа на экране 'О программе'"""
