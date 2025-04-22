@@ -728,57 +728,51 @@ class NexusTGApp(ctk.CTk):
         self.create_operation_screen()
     
     def create_operation_screen(self):
-        """Create the main operation screen after successful loading"""
-        # Clear previous content
+        """Создает экран с логированием и управлением"""
+        # Clear previous content if any
         for widget in self.main_frame.winfo_children():
             widget.destroy()
         
-        # Create header with title
-        header_frame = ctk.CTkFrame(self.main_frame, fg_color=self.input_bg, height=60)
-        header_frame.pack(fill="x", padx=0, pady=0)
+        # Create top panel
+        top_bar = ctk.CTkFrame(self.main_frame, fg_color=self.input_bg, height=60)
+        top_bar.pack(fill="x", padx=0, pady=0)
         
-        # Добавляем заголовок и кнопку настроек
-        header_left_frame = ctk.CTkFrame(header_frame, fg_color="transparent", height=60)
-        header_left_frame.place(x=20, y=18)
+        # Logo and app name
+        logo_name_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
+        logo_name_frame.pack(side="left", padx=20)
         
-        header_title = ctk.CTkLabel(header_left_frame, text="Панель управления", 
-                                 font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
-                                 text_color=self.text_color)
-        header_title.pack(side="left")
+        self.logo_button_frame = ctk.CTkFrame(logo_name_frame, fg_color="transparent", width=40, height=40)
+        self.logo_button_frame.pack(side="left", padx=(0, 10))
         
-        # Добавляем кнопку настроек
-        settings_button = ctk.CTkButton(header_left_frame, 
-                                   text="Настройки", 
-                                   font=ctk.CTkFont(family="Segoe UI", size=13),
-                                   fg_color="transparent",
-                                   text_color=self.secondary_text,
-                                   hover_color=self.input_bg,
-                                   height=28,
-                                   width=20,
-                                   corner_radius=6,
-                                   command=lambda: self.add_log_message("Нажата кнопка настроек"))
-        settings_button.pack(side="left", padx=(15, 0))
+        # Create small logo
+        self.small_logo_canvas = ctk.CTkCanvas(self.logo_button_frame, width=40, height=40, 
+                                          bg=self.input_bg, highlightthickness=0)
+        self.small_logo_canvas.pack()
+        self.create_small_logo()
         
-        # Создаем красивое кастомное выпадающее меню
-        # Используем собственную реализацию выпадающего меню вместо стандартного tk.Menu
+        # App name
+        app_name = ctk.CTkLabel(logo_name_frame, text="NexusTG", 
+                           font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
+                           text_color=self.text_color)
+        app_name.pack(side="left")
+        
+        # Инициализируем переменные для выпадающего меню
         self.custom_dropdown_visible = False
         self.custom_dropdown_frame = None
         
-        # Фрейм для кнопок справа
-        right_buttons_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        right_buttons_frame.place(relx=0.98, y=30, anchor="e")
+        # Right side controls
+        right_buttons_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
+        right_buttons_frame.pack(side="right", padx=20, pady=14)
         
-        # Добавляем кнопку остановки/запуска бота с учетом текущего состояния
+        # Кнопка переключения (определяем цвета в зависимости от состояния бота)
         if hasattr(self, 'bot_is_running') and self.bot_is_running:
-            # Бот запущен - показываем кнопку "Остановить"
             button_text = "Остановить"
-            button_color = self.primary_blue
-            button_hover = "#1565c0"
+            button_color = "#E74C3C"  # Красный для кнопки "Остановить"
+            button_hover = "#C0392B"  # Темно-красный при наведении
         else:
-            # Бот остановлен - показываем кнопку "Запустить"
             button_text = "Запустить"
-            button_color = "#28a745"
-            button_hover = "#218838"
+            button_color = "#2ECC71"  # Зеленый для кнопки "Запустить"
+            button_hover = "#27AE60"  # Темно-зеленый при наведении
             
         self.toggle_bot_button = ctk.CTkButton(right_buttons_frame, 
                                           text=button_text, 
@@ -850,13 +844,22 @@ class NexusTGApp(ctk.CTk):
                               text_color=self.secondary_text)
         owners_info.pack(anchor="w", padx=20, pady=2)
         
-        # Status info с учетом текущего состояния
+        # Status info с учетом текущего состояния и цвета
         status_text = "Активен" if self.bot_is_running else "Остановлен"
+        status_color = "#2ECC71" if self.bot_is_running else "#E74C3C"  # Зеленый или красный
+        
         self.bot_status_info = ctk.CTkLabel(info_frame, 
-                              text=f"Статус: {status_text}", 
+                              text=f"Статус: ", 
                               font=ctk.CTkFont(family="Segoe UI", size=14),
                               text_color=self.secondary_text)
-        self.bot_status_info.pack(anchor="w", padx=20, pady=(2, 15))
+        self.bot_status_info.pack(anchor="w", padx=20, pady=(2, 15), side="left")
+        
+        # Отдельная метка для статуса с цветом
+        self.bot_status_value = ctk.CTkLabel(info_frame, 
+                              text=status_text, 
+                              font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+                              text_color=status_color)
+        self.bot_status_value.pack(anchor="w", pady=(2, 15), side="left")
         
         # Command log area
         log_frame = ctk.CTkFrame(content_frame, fg_color=self.input_bg, corner_radius=10)
@@ -883,10 +886,12 @@ class NexusTGApp(ctk.CTk):
         scrollbar.configure(command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
         
+        # Определяем текущее время для всех логов
+        current_time = time.strftime("%H:%M:%S")
+        
         # Проверяем, есть ли сохраненная история логов
         if not self.log_history:
             # Если истории нет, добавляем стандартные сообщения
-            current_time = time.strftime("%H:%M:%S")
             startup_message = f"[{current_time}] Приложение NexusTG запущено"
             self.log_history.append(startup_message)
         
@@ -904,22 +909,46 @@ class NexusTGApp(ctk.CTk):
             self.log_text.insert("end", f"{log_entry}\n")
         self.log_text.see("end")  # Прокрутка к последнему сообщению
         self.log_text.configure(state="disabled")  # Make read-only
-        
+    
     def toggle_bot_status(self):
         """Переключение статуса бота (остановка/запуск)"""
         if hasattr(self, 'bot') and hasattr(self.bot, 'is_running') and self.bot.is_running:
             # Останавливаем бота
             threading.Thread(target=self.stop_bot, daemon=True).start()
-            self.toggle_bot_button.configure(text="Запустить", fg_color="#28a745", hover_color="#218838")
-            self.bot_status_info.configure(text="Статус: Остановлен")
+            
+            # Обновляем кнопку на зеленую "Запустить"
+            self.toggle_bot_button.configure(
+                text="Запустить", 
+                fg_color="#2ECC71",  # Зеленый
+                hover_color="#27AE60"  # Темно-зеленый
+            )
+            
+            # Обновляем статус на красный "Остановлен" 
+            self.bot_status_value.configure(
+                text="Остановлен",
+                text_color="#E74C3C"  # Красный
+            )
+            
             self.add_log_message("Бот остановлен")
             # Обновляем состояние бота
             self.bot_is_running = False
         else:
             # Запускаем бота снова
             threading.Thread(target=self.restart_bot, daemon=True).start()
-            self.toggle_bot_button.configure(text="Остановить", fg_color=self.primary_blue, hover_color="#1565c0")
-            self.bot_status_info.configure(text="Статус: Активен")
+            
+            # Обновляем кнопку на красную "Остановить"
+            self.toggle_bot_button.configure(
+                text="Остановить", 
+                fg_color="#E74C3C",  # Красный
+                hover_color="#C0392B"  # Темно-красный
+            )
+            
+            # Обновляем статус на зеленый "Активен"
+            self.bot_status_value.configure(
+                text="Активен",
+                text_color="#2ECC71"  # Зеленый
+            )
+            
             self.add_log_message("Бот запущен")
             # Обновляем состояние бота
             self.bot_is_running = True
@@ -1319,106 +1348,129 @@ class NexusTGApp(ctk.CTk):
             # Если меню видимо, скрываем его
             self.custom_dropdown_frame.destroy()
             self.custom_dropdown_visible = False
+            # Убираем обработчик события клика
+            self.unbind("<Button-1>")
         else:
             # Если меню скрыто, показываем его
             self.show_custom_dropdown()
     
     def show_custom_dropdown(self):
         """Показывает красивое кастомное выпадающее меню"""
-        # Определяем положение меню относительно кнопки
-        x = self.logo_button_frame.winfo_rootx() - self.winfo_rootx() - 160
-        y = self.logo_button_frame.winfo_rooty() - self.winfo_rooty() + 40
-        
-        # Проверка границ экрана
-        menu_width = 240  # Примерная ширина меню
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        
-        # Коррекция координат, если меню выходит за правую границу экрана
-        root_x = self.winfo_rootx()
-        if root_x + x + menu_width > screen_width:
-            x = max(10, x - menu_width)
+        # Если меню уже видимо, не создаем его снова
+        if self.custom_dropdown_visible and self.custom_dropdown_frame:
+            return
             
-        # Проверка верхней и нижней границы экрана
-        root_y = self.winfo_rooty()
-        menu_height = 220  # Примерная высота меню
-        if root_y + y + menu_height > screen_height:
-            y = max(10, screen_height - root_y - menu_height - 10)
-        
-        # Создаем фрейм для выпадающего меню
-        self.custom_dropdown_frame = ctk.CTkFrame(
-            self.main_frame, 
-            fg_color="#1D2637",
-            corner_radius=10,
-            border_width=1,
-            border_color="#2D374B"
-        )
-        self.custom_dropdown_frame.place(x=x, y=y)
-        
-        # Добавляем контейнер с отступами
-        menu_container = ctk.CTkFrame(self.custom_dropdown_frame, fg_color="transparent")
-        menu_container.pack(padx=5, pady=5)
-        
-        # Заголовок меню
-        menu_header = ctk.CTkFrame(menu_container, fg_color="transparent", height=30)
-        menu_header.pack(fill="x", padx=10, pady=(5, 10))
-        
-        # Логотип в заголовке
-        logo_size = 24
-        logo_frame = ctk.CTkFrame(menu_header, fg_color=self.primary_blue, 
-                              width=logo_size, height=logo_size, corner_radius=logo_size/2)
-        logo_frame.pack(side="left", padx=(0, 8))
-        logo_frame.pack_propagate(False)
-        
-        logo_text = ctk.CTkLabel(logo_frame, text="NT", font=("Segoe UI", 12, "bold"),
-                             text_color=self.text_color)
-        logo_text.place(relx=0.5, rely=0.5, anchor="center")
-        
-        menu_title = ctk.CTkLabel(menu_header, text="NexusTG Меню", 
-                              font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
-                              text_color=self.text_color)
-        menu_title.pack(side="left")
-        
-        # Кнопки для меню
-        # Кнопка "Команды"
-        commands_button = self.create_menu_button(
-            menu_container, 
-            "Команды", 
-            "Управление командами бота",
-            self.show_commands_screen,
-            icon_text="🔧"
-        )
-        commands_button.pack(fill="x", padx=5, pady=2)
-        
-        # Кнопка "Добавить"
-        add_button = self.create_menu_button(
-            menu_container, 
-            "Добавить функцию", 
-            "Добавление новых возможностей",
-            lambda: self.add_log_message("Нажата кнопка: Добавить функцию"),
-            icon_text="➕"
-        )
-        add_button.pack(fill="x", padx=5, pady=2)
-        
-        # Разделитель
-        separator = ctk.CTkFrame(menu_container, height=1, fg_color="#2D374B")
-        separator.pack(fill="x", padx=10, pady=8)
-        
-        # Кнопка "О программе"
-        about_button = self.create_menu_button(
-            menu_container, 
-            "О программе", 
-            "Информация о NexusTG",
-            self.show_about_dialog,
-            icon_text="ℹ️"
-        )
-        about_button.pack(fill="x", padx=5, pady=2)
-        
-        # Отмечаем, что меню отображается
-        self.custom_dropdown_visible = True
-        
-        # Привязываем событие закрытия при клике вне меню
-        self.bind("<Button-1>", self.close_dropdown_if_outside, add="+")
+        try:
+            # Получаем размеры окна
+            window_width = self.winfo_width()
+            window_height = self.winfo_height()
+            
+            # Фиксированное позиционирование в ПРАВОЙ части окна (верхний угол)
+            menu_width = 240  # Примерная ширина меню
+            menu_height = 220  # Примерная высота меню
+            
+            # Позиционируем меню в правой верхней части, с отступом от края
+            x = window_width - menu_width - 20  # 20px отступ от правого края
+            y = 60  # Отступ от верхнего края (под верхней панелью)
+            
+            # Проверка, чтобы не выходить за пределы окна
+            if x < 10:
+                x = 10
+            if y < 10:
+                y = 10
+            if y + menu_height > window_height:
+                y = max(10, window_height - menu_height - 10)
+            
+            # Создаем фрейм для выпадающего меню
+            self.custom_dropdown_frame = ctk.CTkFrame(
+                self, 
+                fg_color="#1D2637",
+                corner_radius=10,
+                border_width=1,
+                border_color="#2D374B"
+            )
+            
+            # Используем place для точного позиционирования относительно окна
+            self.custom_dropdown_frame.place(x=x, y=y)
+            
+            # Добавляем контейнер с отступами
+            menu_container = ctk.CTkFrame(self.custom_dropdown_frame, fg_color="transparent")
+            menu_container.pack(padx=5, pady=5)
+            
+            # Заголовок меню
+            menu_header = ctk.CTkFrame(menu_container, fg_color="transparent", height=30)
+            menu_header.pack(fill="x", padx=10, pady=(5, 10))
+            
+            # Логотип в заголовке
+            logo_size = 24
+            logo_frame = ctk.CTkFrame(menu_header, fg_color=self.primary_blue, 
+                                width=logo_size, height=logo_size, corner_radius=logo_size/2)
+            logo_frame.pack(side="left", padx=(0, 8))
+            logo_frame.pack_propagate(False)
+            
+            logo_text = ctk.CTkLabel(logo_frame, text="NT", font=("Segoe UI", 12, "bold"),
+                                text_color=self.text_color)
+            logo_text.place(relx=0.5, rely=0.5, anchor="center")
+            
+            menu_title = ctk.CTkLabel(menu_header, text="NexusTG Меню", 
+                                font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+                                text_color=self.text_color)
+            menu_title.pack(side="left")
+            
+            # Кнопки для меню (создаем более эффективно)
+            # Кнопка "Команды"
+            commands_button = self.create_menu_button(
+                menu_container, 
+                "Команды", 
+                "Управление командами бота",
+                self.show_commands_screen,
+                icon_text="🔧"
+            )
+            commands_button.pack(fill="x", padx=5, pady=2)
+            
+            # Кнопка "Добавить"
+            add_button = self.create_menu_button(
+                menu_container, 
+                "Добавить функцию", 
+                "Добавление новых возможностей",
+                lambda: self.add_log_message("Нажата кнопка: Добавить функцию"),
+                icon_text="➕"
+            )
+            add_button.pack(fill="x", padx=5, pady=2)
+            
+            # Разделитель
+            separator = ctk.CTkFrame(menu_container, height=1, fg_color="#2D374B")
+            separator.pack(fill="x", padx=10, pady=8)
+            
+            # Кнопка "О программе"
+            about_button = self.create_menu_button(
+                menu_container, 
+                "О программе", 
+                "Информация о NexusTG",
+                self.show_about_dialog,
+                icon_text="ℹ️"
+            )
+            about_button.pack(fill="x", padx=5, pady=2)
+            
+            # Отмечаем, что меню отображается
+            self.custom_dropdown_visible = True
+            
+            # Привязываем событие закрытия при клике вне меню (один раз)
+            self.bind("<Button-1>", self.close_dropdown_if_outside, add="+")
+            
+            # Обновляем окно, чтобы меню сразу отобразилось правильно
+            self.update_idletasks()
+            
+            # Добавляем отладочное сообщение
+            print(f"Окно: ширина={window_width}, высота={window_height}")
+            print(f"Меню: x={x}, y={y}, w={menu_width}, h={menu_height}")
+            
+        except Exception as e:
+            print(f"Ошибка при создании меню: {e}")
+            # В случае ошибки сбрасываем состояние
+            self.custom_dropdown_visible = False
+            if hasattr(self, 'custom_dropdown_frame') and self.custom_dropdown_frame:
+                self.custom_dropdown_frame.destroy()
     
     def create_menu_button(self, parent, title, subtitle, command, icon_text=None, is_danger=False):
         """Создает стильную кнопку для кастомного меню"""
@@ -1434,10 +1486,12 @@ class NexusTGApp(ctk.CTk):
             height=60,
             border_width=0
         )
+        button_frame._command = command  # Сохраняем команду как атрибут
         
         # Создаем контейнер для содержимого с отступами
         content_frame = ctk.CTkFrame(button_frame, fg_color="transparent")
         content_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        content_frame._command = command  # Сохраняем команду как атрибут
         
         # Добавляем иконку, если она указана
         if icon_text:
@@ -1449,10 +1503,12 @@ class NexusTGApp(ctk.CTk):
                 text_color=self.text_color
             )
             icon_label.pack(side="left", padx=(5, 10))
+            icon_label._command = command  # Сохраняем команду как атрибут
         
         # Создаем контейнер для текстовых меток
         text_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
         text_frame.pack(side="left", fill="both", expand=True)
+        text_frame._command = command  # Сохраняем команду как атрибут
         
         # Заголовок
         title_label = ctk.CTkLabel(
@@ -1465,6 +1521,7 @@ class NexusTGApp(ctk.CTk):
             justify="left"
         )
         title_label.pack(anchor="w", fill="x")
+        title_label._command = command  # Сохраняем команду как атрибут
         
         # Подзаголовок
         subtitle_label = ctk.CTkLabel(
@@ -1477,6 +1534,12 @@ class NexusTGApp(ctk.CTk):
             justify="left"
         )
         subtitle_label.pack(anchor="w", fill="x", pady=(2, 0))
+        subtitle_label._command = command  # Сохраняем команду как атрибут
+        
+        # Общая функция для обработки клика
+        def handle_click(event, cmd=command):
+            # Закрываем меню и выполняем команду
+            self.close_dropdown_and_execute(cmd)()
         
         # Создаем функции для эффектов при наведении
         def on_enter(e):
@@ -1485,24 +1548,17 @@ class NexusTGApp(ctk.CTk):
         def on_leave(e):
             button_frame.configure(fg_color=normal_fg)
             
-        def on_click(e):
-            # Временно меняем цвет для эффекта нажатия
-            button_frame.configure(fg_color=hover_color)
-            # Запускаем команду с задержкой
-            wrapper = self.close_dropdown_and_execute(command)
-            button_frame.after(50, wrapper)
-            
-        # Привязываем события ко ВСЕМ компонентам для надежности
+        # Привязываем события ко всем компонентам для надежности
         for widget in [button_frame, content_frame, text_frame, title_label, subtitle_label]:
             widget.bind("<Enter>", on_enter)
             widget.bind("<Leave>", on_leave)
-            widget.bind("<Button-1>", on_click)
+            widget.bind("<Button-1>", handle_click)
             
         # Если есть иконка, привязываем события и к ней
         if icon_text:
             icon_label.bind("<Enter>", on_enter)
             icon_label.bind("<Leave>", on_leave)
-            icon_label.bind("<Button-1>", on_click)
+            icon_label.bind("<Button-1>", handle_click)
         
         return button_frame
     
@@ -1510,32 +1566,45 @@ class NexusTGApp(ctk.CTk):
         """Закрывает выпадающее меню при клике вне его области"""
         if not self.custom_dropdown_visible or not self.custom_dropdown_frame:
             return
-            
-        # Проверяем, был ли клик вне области меню
-        x, y = event.x_root, event.y_root
-        frame_x = self.custom_dropdown_frame.winfo_rootx()
-        frame_y = self.custom_dropdown_frame.winfo_rooty()
-        frame_width = self.custom_dropdown_frame.winfo_width()
-        frame_height = self.custom_dropdown_frame.winfo_height()
         
-        if not (frame_x <= x <= frame_x + frame_width and frame_y <= y <= frame_y + frame_height):
-            # Клик был вне меню
-            self.custom_dropdown_frame.destroy()
+        try:
+            # Проверяем, был ли клик вне области меню
+            x, y = event.x_root, event.y_root
+            frame_x = self.custom_dropdown_frame.winfo_rootx()
+            frame_y = self.custom_dropdown_frame.winfo_rooty()
+            frame_width = self.custom_dropdown_frame.winfo_width()
+            frame_height = self.custom_dropdown_frame.winfo_height()
+            
+            if not (frame_x <= x <= frame_x + frame_width and frame_y <= y <= frame_y + frame_height):
+                # Клик был вне меню - закрываем его
+                self.custom_dropdown_frame.destroy()
+                self.custom_dropdown_visible = False
+                # Убираем обработчик нажатия
+                self.unbind("<Button-1>")
+        except Exception as e:
+            # В случае ошибки просто закрываем меню
+            if hasattr(self, 'custom_dropdown_frame') and self.custom_dropdown_frame:
+                self.custom_dropdown_frame.destroy()
             self.custom_dropdown_visible = False
             self.unbind("<Button-1>")
     
     def close_dropdown_and_execute(self, command):
         """Закрывает выпадающее меню и выполняет команду"""
         def wrapper():
-            # Сначала закрываем меню
-            if self.custom_dropdown_visible and self.custom_dropdown_frame:
-                self.custom_dropdown_frame.destroy()
-                self.custom_dropdown_visible = False
-                self.unbind("<Button-1>")
-            
-            # Затем выполняем команду с небольшой задержкой
-            self.after(50, command)
-            
+            try:
+                # Сначала закрываем меню
+                if self.custom_dropdown_visible and self.custom_dropdown_frame:
+                    self.custom_dropdown_frame.destroy()
+                    self.custom_dropdown_visible = False
+                    # Убираем обработчик нажатия
+                    self.unbind("<Button-1>")
+                
+                # Затем выполняем команду
+                self.after(10, command)
+            except Exception as e:
+                # В случае ошибки продолжаем выполнение команды
+                self.after(10, command)
+                
         return wrapper
     
     def show_about_dialog(self):
@@ -1814,7 +1883,7 @@ class NexusTGApp(ctk.CTk):
                                   corner_radius=10,
                                   height=38,
                                   width=180,
-                                  command=lambda: webbrowser.open("https://t.me/nexustg_channel"))
+                                  command=lambda: webbrowser.open("https://t.me/INTkazurage"))
         tg_channel_btn.pack()
     
     def animate_about_logo_arc(self):

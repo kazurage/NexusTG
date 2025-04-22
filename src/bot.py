@@ -8,12 +8,17 @@
 
 import logging
 import asyncio
+import httpx
+import certifi
+import ssl
+import os
 from typing import List, Optional, Callable
 from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, 
     filters, CallbackContext
 )
+from telegram.request import HTTPXRequest
 
 from src.commands import register_commands
 from src.config import Config
@@ -78,7 +83,11 @@ class TelegramBot:
                     self.error_callback("Неверный токен бота. Пожалуйста, проверьте и введите заново.")
                 return False
 
-            # Создаем приложение с правильными настройками
+            # Создаем приложение с базовыми настройками (без SSL проверки)
+            # В python-telegram-bot нужно установить переменную среды для отключения SSL
+            os.environ['PYTHONHTTPSVERIFY'] = '0'
+            
+            # Создаем базовый builder
             builder = Application.builder().token(self.token)
             self.application = builder.build()
             
@@ -163,8 +172,12 @@ class TelegramBot:
             bool: True если токен действителен, False если нет
         """
         try:
-            # Создаем временное приложение для проверки токена
+            # Устанавливаем переменную среды для отключения SSL проверки
+            os.environ['PYTHONHTTPSVERIFY'] = '0'
+            
+            # Создаем базовое приложение для проверки
             app = Application.builder().token(self.token).build()
+            
             await app.initialize()
             me = await app.bot.get_me()
             logger.info(f"Подключен к боту: {me.first_name} (@{me.username})")
