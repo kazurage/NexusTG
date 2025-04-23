@@ -132,15 +132,34 @@ class TelegramBot:
         """Остановка бота"""
         if self.application and self.is_running:
             try:
+                # Установка флага остановки перед любыми операциями с event loop
+                # Это нужно, чтобы даже в случае ошибки бот считался остановленным
+                self.is_running = False
+                
+                # Получаем текущий event loop
+                current_loop = asyncio.get_event_loop()
+                
                 # Останавливаем polling сначала
                 if hasattr(self.application, 'updater') and self.application.updater:
-                    await self.application.updater.stop()
+                    try:
+                        await self.application.updater.stop()
+                    except RuntimeError as e:
+                        if "got Future" in str(e) and "attached to a different loop" in str(e):
+                            logger.warning("Updater использует другой event loop, отметка как остановленный")
+                        else:
+                            raise e
                 
                 # Затем останавливаем всё приложение
-                await self.application.stop()
+                try:
+                    await self.application.stop()
+                except RuntimeError as e:
+                    if "got Future" in str(e) and "attached to a different loop" in str(e):
+                        logger.warning("Application использует другой event loop, отметка как остановленный")
+                    else:
+                        raise e
                 
-                # Отмечаем, что бот остановлен
-                self.is_running = False
+                # Закрываем приложение и избегаем ссылок на него
+                self.application = None
                 
                 logger.info("Бот остановлен")
                 if self.message_callback:
@@ -149,8 +168,7 @@ class TelegramBot:
                 # Обрабатываем ошибку несоответствия циклов событий
                 if "got Future" in str(e) and "attached to a different loop" in str(e):
                     logger.error(f"Ошибка цикла событий: {str(e)}")
-                    # Отмечаем бота как остановленного, даже если произошла ошибка
-                    self.is_running = False
+                    # Бот уже отмечен как остановленный в начале функции
                     if self.message_callback:
                         self.message_callback("Бот отмечен как остановленный, но возникла ошибка цикла событий")
                 else:
@@ -163,6 +181,9 @@ class TelegramBot:
                 logger.error(f"Непредвиденная ошибка при остановке бота: {str(e)}")
                 if self.error_callback:
                     self.error_callback(f"Непредвиденная ошибка при остановке бота: {str(e)}")
+                
+                # Убедимся, что ссылка на приложение удалена
+                self.application = None
     
     async def _validate_token(self) -> bool:
         """

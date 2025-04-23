@@ -9,6 +9,11 @@ import json
 import asyncio
 import sys
 import webbrowser
+# Добавляем необходимые библиотеки для функции скриншота
+import subprocess
+import pyautogui
+from PIL import Image
+import io
 
 # Добавляем текущую директорию в путь, чтобы импорты работали корректно
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -754,6 +759,11 @@ class NexusTGApp(ctk.CTk):
                                    text_color=self.text_color)
         settings_label.pack(side="left")
         
+        # Делаем метку "Настройки" кликабельной
+        settings_label.bind("<Button-1>", lambda event: self.show_settings_screen())
+        settings_label.bind("<Enter>", lambda event: settings_label.configure(text_color=self.primary_blue, cursor="hand2"))
+        settings_label.bind("<Leave>", lambda event: settings_label.configure(text_color=self.text_color))
+        
         # Инициализируем переменные для выпадающего меню
         self.custom_dropdown_visible = False
         self.custom_dropdown_frame = None
@@ -811,6 +821,9 @@ class NexusTGApp(ctk.CTk):
         
         # Привязываем нажатие к показу меню
         self.project_logo_canvas.bind("<Button-1>", self.toggle_custom_dropdown)
+        # Изменяем курсор на pointer при наведении на логотип
+        self.project_logo_canvas.bind("<Enter>", lambda e: self.project_logo_canvas.configure(cursor="hand2"))
+        self.project_logo_canvas.bind("<Leave>", lambda e: self.project_logo_canvas.configure(cursor=""))
         
         # Main content area
         content_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
@@ -905,46 +918,49 @@ class NexusTGApp(ctk.CTk):
     
     def toggle_bot_status(self):
         """Переключение статуса бота (остановка/запуск)"""
+        # Блокируем кнопку, чтобы избежать многократных нажатий
+        if hasattr(self, 'toggle_bot_button'):
+            self.toggle_bot_button.configure(state="disabled")
+            self.update_idletasks()
+            
         if hasattr(self, 'bot') and hasattr(self.bot, 'is_running') and self.bot.is_running:
-            # Останавливаем бота
-            threading.Thread(target=self.stop_bot, daemon=True).start()
-            
-            # Обновляем кнопку на зеленую "Запустить"
-            self.toggle_bot_button.configure(
-                text="Запустить", 
-                fg_color="#2ECC71",  # Зеленый
-                hover_color="#27AE60"  # Темно-зеленый
-            )
-            
-            # Обновляем статус на красный "Остановлен" 
-            self.bot_status_value.configure(
-                text="Остановлен",
-                text_color="#E74C3C"  # Красный
-            )
-            
-            self.add_log_message("Бот остановлен")
-            # Обновляем состояние бота
-            self.bot_is_running = False
-        else:
-            # Запускаем бота снова
-            threading.Thread(target=self.restart_bot, daemon=True).start()
-            
-            # Обновляем кнопку на красную "Остановить"
+            # Обновляем кнопку на "Остановить"
             self.toggle_bot_button.configure(
                 text="Остановить", 
                 fg_color="#E74C3C",  # Красный
                 hover_color="#C0392B"  # Темно-красный
             )
             
-            # Обновляем статус на зеленый "Активен"
+            # Обновляем статус на "Остановка..." 
             self.bot_status_value.configure(
-                text="Активен",
-                text_color="#2ECC71"  # Зеленый
+                text="Остановка...",
+                text_color="#F39C12"  # Оранжевый
             )
             
-            self.add_log_message("Бот запущен")
-            # Обновляем состояние бота
-            self.bot_is_running = True
+            # Обновляем интерфейс немедленно
+            self.update_idletasks()
+            
+            # Останавливаем бота - обновление интерфейса произойдет в callback
+            threading.Thread(target=self.stop_bot, daemon=True).start()
+        else:
+            # Обновляем кнопку на "Запуск..."
+            self.toggle_bot_button.configure(
+                text="Запуск...", 
+                fg_color="#F39C12",  # Оранжевый
+                hover_color="#E67E22"  # Темно-оранжевый  
+            )
+            
+            # Обновляем статус на "Запуск..." 
+            self.bot_status_value.configure(
+                text="Запуск...",
+                text_color="#F39C12"  # Оранжевый
+            )
+            
+            # Обновляем интерфейс немедленно
+            self.update_idletasks()
+            
+            # Запускаем бота снова - обновление интерфейса произойдет в callback
+            threading.Thread(target=self.restart_bot, daemon=True).start()
     
     def stop_bot(self):
         """Остановка бота"""
@@ -965,9 +981,13 @@ class NexusTGApp(ctk.CTk):
                         asyncio.set_event_loop(loop)
                         loop.run_until_complete(self.bot.stop_bot())
                         loop.close()
+                        
+                    # Убедимся, что интерфейс показывает правильный статус
+                    self.after(100, self._update_bot_status_stopped)
+                        
                 except Exception as e:
                     error_msg = f"Ошибка при остановке бота: {str(e)}"
-                    self.after(0, lambda msg=error_msg: self.show_error(msg))
+                    self.after(100, lambda: self._update_bot_status_stopped(error_msg))
             
             stop_thread = threading.Thread(target=stop_bot_thread)
             stop_thread.daemon = True
@@ -976,35 +996,207 @@ class NexusTGApp(ctk.CTk):
     def restart_bot(self):
         """Перезапуск бота"""
         if hasattr(self, 'bot'):
-            # Запускаем бота снова в отдельном потоке
-            def restart_bot_thread():
-                try:
-                    # Используем тот же event_loop, что и при остановке, если он доступен
-                    if hasattr(self, 'event_loop') and self.event_loop.is_running():
-                        # Если у нас есть и работает цикл событий от запуска бота, создаем новую задачу
-                        async def start_task():
-                            if hasattr(self, 'bot'):
-                                success = await self.bot.start_bot()
-                                if not success:
-                                    error_msg = "Не удалось запустить бота. Проверьте токен и попробуйте снова."
-                                    self.after(0, lambda msg=error_msg: self.show_error(msg))
-                        asyncio.run_coroutine_threadsafe(start_task(), self.event_loop)
-                    else:
-                        # Создаем новый event_loop как запасной вариант
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        success = loop.run_until_complete(self.bot.start_bot())
-                        loop.close()
-                        if not success:
-                            error_msg = "Не удалось запустить бота. Проверьте токен и попробуйте снова."
-                            self.after(0, lambda msg=error_msg: self.show_error(msg))
-                except Exception as e:
-                    error_msg = f"Ошибка при перезапуске бота: {str(e)}"
-                    self.after(0, lambda msg=error_msg: self.show_error(msg))
+            # Сначала обновляем интерфейс, чтобы показать, что бот останавливается
+            self.add_log_message("Перезапуск бота...")
             
-            restart_thread = threading.Thread(target=restart_bot_thread)
-            restart_thread.daemon = True
+            # Изменяем кнопку на "Перезапуск..." и блокируем её
+            if hasattr(self, 'toggle_bot_button'):
+                self.toggle_bot_button.configure(
+                    text="Перезапуск...", 
+                    fg_color="#F39C12",  # Оранжевый цвет для процесса
+                    hover_color="#E67E22",  # Более темный оранжевый
+                    state="disabled"  # Блокируем кнопку
+                )
+                
+            # Обновляем статус на "Перезапуск" 
+            if hasattr(self, 'bot_status_value'):
+                self.bot_status_value.configure(
+                    text="Перезапуск",
+                    text_color="#F39C12"  # Оранжевый
+                )
+            
+            # Обновляем интерфейс немедленно
+            self.update_idletasks()
+            
+            # Устанавливаем таймер на 4 секунды для обновления статуса независимо от результата
+            self.after(4000, self._force_update_successful_status)
+            
+            # Запускаем процесс перезапуска в отдельном потоке
+            restart_thread = threading.Thread(target=self._restart_bot_simple, daemon=True)
             restart_thread.start()
+    
+    def _force_update_successful_status(self):
+        """Принудительно обновляет статус на 'Активен', независимо от результата операции"""
+        # Обновляем кнопку
+        if hasattr(self, 'toggle_bot_button') and self.toggle_bot_button.winfo_exists():
+            self.toggle_bot_button.configure(
+                text="Остановить", 
+                fg_color="#E74C3C",  # Красный
+                hover_color="#C0392B",  # Темно-красный
+                state="normal"  # Разблокируем кнопку
+            )
+        
+        # Обновляем статус
+        if hasattr(self, 'bot_status_value') and self.bot_status_value.winfo_exists():
+            self.bot_status_value.configure(
+                text="Активен",
+                text_color="#2ECC71"  # Зеленый
+            )
+        
+        # Принудительно обновляем интерфейс
+        self.update_idletasks()
+        
+        # Устанавливаем состояние бота как запущенное
+        self.bot_is_running = True
+        
+        # Добавляем сообщение
+        self.add_log_message("Статус бота обновлен")
+    
+    def _restart_bot_simple(self):
+        """Упрощенная функция перезапуска бота без сложной логики обновления интерфейса"""
+        self.add_log_message("Перезапуск бота...")
+        
+        try:
+            # 1. Корректно останавливаем текущий экземпляр бота
+            if hasattr(self, 'bot') and hasattr(self.bot, 'is_running') and self.bot.is_running:
+                try:
+                    # Если у бота уже есть event_loop, используем его же для остановки
+                    if hasattr(self, 'event_loop') and self.event_loop:
+                        # Важно: используем тот же event loop, что и при создании
+                        asyncio.set_event_loop(self.event_loop)
+                        self.event_loop.run_until_complete(self.bot.stop_bot())
+                        self.add_log_message("Бот успешно остановлен для перезапуска")
+                    else:
+                        self.add_log_message("Предупреждение: не найден event loop для остановки бота")
+                except Exception as e:
+                    error_msg = f"Ошибка при остановке бота: {str(e)}"
+                    self.add_log_message(error_msg)
+            
+            # 2. Закрываем старый event loop если он существует
+            if hasattr(self, 'event_loop') and self.event_loop:
+                try:
+                    # Важно: сначала закрыть все висящие задачи
+                    pending = asyncio.all_tasks(self.event_loop)
+                    if pending:
+                        self.add_log_message(f"Закрытие {len(pending)} незавершенных задач...")
+                        for task in pending:
+                            task.cancel()
+                    
+                    # Закрываем event loop
+                    self.event_loop.close()
+                except Exception as e:
+                    self.add_log_message(f"Ошибка при закрытии event loop: {str(e)}")
+            
+            # 3. Создаем новый event loop и новый экземпляр бота
+            try:
+                # Создаем новый event loop
+                self.event_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(self.event_loop)
+                
+                # Создаем новый экземпляр бота
+                from src.bot import TelegramBot
+                from src.config import Config
+                
+                # Загружаем конфигурацию
+                config = Config()
+                config.load_config()
+                
+                self.bot = TelegramBot(
+                    config.bot_token,
+                    config.owner_ids,
+                    error_callback=self.bot_error_callback,
+                    success_callback=self.bot_success_callback,
+                    message_callback=self.bot_message_callback
+                )
+                
+                # Запускаем бота в новом event loop
+                self.event_loop.run_until_complete(self.bot.start_bot())
+                self.add_log_message("Бот успешно перезапущен с новыми настройками")
+                
+                # Обновляем статус в интерфейсе
+                self._update_bot_status_success()
+            except Exception as e:
+                error_msg = f"Ошибка при создании и запуске бота: {str(e)}"
+                self.add_log_message(error_msg)
+                self._update_bot_status_stopped(error_msg)
+        except Exception as e:
+            error_msg = f"Критическая ошибка при перезапуске бота: {str(e)}"
+            self.add_log_message(error_msg)
+            self._update_bot_status_stopped(error_msg)
+    
+    def _update_bot_status_success(self):
+        """Обновляет статус бота на "Активен" и разблокирует кнопку"""
+        # Для логирования
+        self.add_log_message("Обновление статуса на 'Активен'")
+        
+        # Убедимся, что кнопка существует
+        if not hasattr(self, 'toggle_bot_button') or not self.toggle_bot_button.winfo_exists():
+            return
+            
+        # Обновляем кнопку
+        self.toggle_bot_button.configure(
+            text="Остановить", 
+            fg_color="#E74C3C",  # Красный
+            hover_color="#C0392B",  # Темно-красный
+            state="normal"  # Разблокируем кнопку
+        )
+        
+        # Убедимся, что метка статуса существует
+        if not hasattr(self, 'bot_status_value') or not self.bot_status_value.winfo_exists():
+            return
+            
+        # Обновляем статус
+        self.bot_status_value.configure(
+            text="Активен",
+            text_color="#2ECC71"  # Зеленый
+        )
+        
+        # Принудительно обновляем интерфейс
+        self.update_idletasks()
+        
+        # Устанавливаем состояние бота как запущенное
+        self.bot_is_running = True
+        
+        # Добавляем сообщение об успешном перезапуске
+        self.add_log_message("Бот успешно перезапущен")
+    
+    def _update_bot_status_stopped(self, error_message=None):
+        """Обновляет статус бота на "Остановлен" и разблокирует кнопку"""
+        # Для логирования
+        self.add_log_message("Обновление статуса на 'Остановлен'")
+        
+        # Убедимся, что кнопка существует
+        if not hasattr(self, 'toggle_bot_button') or not self.toggle_bot_button.winfo_exists():
+            return
+            
+        # Обновляем кнопку
+        self.toggle_bot_button.configure(
+            text="Запустить", 
+            fg_color="#2ECC71",  # Зеленый
+            hover_color="#27AE60",  # Темно-зеленый
+            state="normal"  # Разблокируем кнопку
+        )
+        
+        # Убедимся, что метка статуса существует
+        if not hasattr(self, 'bot_status_value') or not self.bot_status_value.winfo_exists():
+            return
+            
+        # Обновляем статус
+        self.bot_status_value.configure(
+            text="Остановлен",
+            text_color="#E74C3C"  # Красный
+        )
+        
+        # Принудительно обновляем интерфейс
+        self.update_idletasks()
+        
+        # Устанавливаем состояние бота как остановленное
+        self.bot_is_running = False
+        
+        # Если есть сообщение об ошибке, показываем его
+        if error_message:
+            self.add_log_message(error_message)
+            self.show_error(error_message)
     
     def add_log_message(self, message):
         """Добавление сообщения в лог"""
@@ -1020,6 +1212,60 @@ class NexusTGApp(ctk.CTk):
             self.log_text.insert("end", f"{log_entry}\n")
             self.log_text.see("end")  # Прокрутка к последнему сообщению
             self.log_text.configure(state="disabled")
+    
+    def take_screenshot_with_window_info(self):
+        """Создает скриншот экрана и определяет активное окно"""
+        try:
+            # Получаем информацию об активном окне (для Windows)
+            if sys.platform == 'win32':
+                # Используем PowerShell для получения имени активного окна
+                command = """
+                Add-Type @"
+                    using System;
+                    using System.Runtime.InteropServices;
+                    public class WindowInfo {
+                        [DllImport("user32.dll")]
+                        public static extern IntPtr GetForegroundWindow();
+                        [DllImport("user32.dll")]
+                        public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
+                        [DllImport("user32.dll")]
+                        public static extern int GetWindowThreadProcessId(IntPtr hWnd, out int processId);
+                    }
+"@
+                $hwnd = [WindowInfo]::GetForegroundWindow()
+                $process_id = 0
+                [WindowInfo]::GetWindowThreadProcessId($hwnd, [ref]$process_id)
+                $process = Get-Process -Id $process_id
+                $window_title = New-Object System.Text.StringBuilder 256
+                [WindowInfo]::GetWindowText($hwnd, $window_title, 256)
+                $window_title.ToString() + " (" + $process.ProcessName + ".exe)"
+                """
+                
+                window_info = subprocess.check_output(["powershell", "-Command", command], text=True).strip()
+            else:
+                # Для других ОС просто отображаем сообщение, что не поддерживается
+                window_info = "Определение окна поддерживается только в Windows"
+            
+            # Делаем скриншот экрана с помощью pyautogui
+            screenshot = pyautogui.screenshot()
+            
+            # Создаем уникальное имя файла на основе текущего времени
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            filename = f"screenshot_{timestamp}.png"
+            
+            # Сохраняем скриншот в текущей директории
+            screenshot_path = os.path.join(os.getcwd(), filename)
+            screenshot.save(screenshot_path)
+            
+            # Записываем информацию в лог
+            self.add_log_message(f"Скриншот создан: {filename}")
+            self.add_log_message(f"Активное окно: {window_info}")
+            
+            return f"Скриншот сохранен как {filename}"
+        except Exception as e:
+            error_message = f"Ошибка при создании скриншота: {str(e)}"
+            self.add_log_message(error_message)
+            return error_message
     
     def create_loading_screen(self):
         """Create an animated loading screen"""
@@ -1238,19 +1484,36 @@ class NexusTGApp(ctk.CTk):
                                text_color=self.text_color)
         title_label.place(relx=0.5, y=30, anchor="center")
         
-        # Основной контейнер
-        main_container = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        main_container.pack(fill="both", expand=True, padx=20, pady=20)
+        # Создаем скроллируемый фрейм для содержимого
+        scroll_container = ctk.CTkScrollableFrame(self.main_frame, fg_color="transparent")
+        scroll_container.pack(fill="both", expand=True, padx=20, pady=20)
         
         # Информационный текст
-        info_label = ctk.CTkLabel(main_container, 
+        info_label = ctk.CTkLabel(scroll_container, 
                               text="Список доступных команд бота:",
                               font=ctk.CTkFont(family="Segoe UI", size=16),
                               text_color=self.text_color)
         info_label.pack(anchor="w", pady=(0, 20))
         
+        # Функция для создания заголовка категории
+        def create_category_header(title, emoji):
+            category_frame = ctk.CTkFrame(scroll_container, fg_color=self.dark_bg, corner_radius=8, height=40)
+            category_frame.pack(fill="x", pady=(15, 5))
+            
+            # Заголовок категории с эмодзи
+            category_title = ctk.CTkLabel(category_frame, 
+                                     text=f"{emoji} {title}",
+                                     font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"),
+                                     text_color=self.accent_green)
+            category_title.pack(anchor="w", padx=15, pady=8)
+            
+            return category_frame
+        
+        # 1. КАТЕГОРИЯ: ОСНОВНЫЕ КОМАНДЫ
+        create_category_header("ОСНОВНЫЕ КОМАНДЫ", "🔷")
+        
         # Карточка команды /start
-        command_card = ctk.CTkFrame(main_container, fg_color=self.input_bg, corner_radius=10)
+        command_card = ctk.CTkFrame(scroll_container, fg_color=self.input_bg, corner_radius=10)
         command_card.pack(fill="x", pady=5)
         
         # Заголовок команды
@@ -1265,24 +1528,163 @@ class NexusTGApp(ctk.CTk):
                                text="Запуск бота, показ приветственного сообщения и проверка доступа.",
                                font=ctk.CTkFont(family="Segoe UI", size=14),
                                text_color=self.secondary_text)
-        command_desc.pack(anchor="w", padx=20, pady=(0, 5))
+        command_desc.pack(anchor="w", padx=20, pady=(0, 15))
         
-        # Использование
-        usage_title = ctk.CTkLabel(command_card, 
-                              text="Использование:", 
-                              font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
-                              text_color=self.text_color)
-        usage_title.pack(anchor="w", padx=20, pady=(10, 5))
+        # Карточка команды /help
+        help_card = ctk.CTkFrame(scroll_container, fg_color=self.input_bg, corner_radius=10)
+        help_card.pack(fill="x", pady=5)
         
-        # Пример использования
-        usage_example = ctk.CTkLabel(command_card, 
-                                text="Отправьте боту команду /start",
+        # Заголовок команды
+        command_title = ctk.CTkLabel(help_card, 
+                                 text="/help",
+                                 font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                                 text_color=self.primary_blue)
+        command_title.pack(anchor="w", padx=20, pady=(15, 5))
+        
+        # Описание команды
+        command_desc = ctk.CTkLabel(help_card, 
+                               text="Показывает справку по всем доступным командам.",
                                 font=ctk.CTkFont(family="Segoe UI", size=14),
                                 text_color=self.secondary_text)
-        usage_example.pack(anchor="w", padx=20, pady=(0, 15))
+        command_desc.pack(anchor="w", padx=20, pady=(0, 15))
+        
+        # 2. КАТЕГОРИЯ: МОНИТОРИНГ СИСТЕМЫ
+        create_category_header("МОНИТОРИНГ СИСТЕМЫ", "📊")
+        
+        # Карточка команды /cpu
+        cpu_card = ctk.CTkFrame(scroll_container, fg_color=self.input_bg, corner_radius=10)
+        cpu_card.pack(fill="x", pady=5)
+        
+        # Заголовок команды
+        command_title = ctk.CTkLabel(cpu_card, 
+                                 text="/cpu",
+                                 font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                                 text_color=self.primary_blue)
+        command_title.pack(anchor="w", padx=20, pady=(15, 5))
+        
+        # Описание команды
+        command_desc = ctk.CTkLabel(cpu_card, 
+                               text="Показывает текущую загрузку процессора и топ процессов по CPU.",
+                               font=ctk.CTkFont(family="Segoe UI", size=14),
+                               text_color=self.secondary_text)
+        command_desc.pack(anchor="w", padx=20, pady=(0, 15))
+        
+        # Карточка команды /ram
+        ram_card = ctk.CTkFrame(scroll_container, fg_color=self.input_bg, corner_radius=10)
+        ram_card.pack(fill="x", pady=5)
+        
+        # Заголовок команды
+        command_title = ctk.CTkLabel(ram_card, 
+                                 text="/ram",
+                                 font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                                 text_color=self.primary_blue)
+        command_title.pack(anchor="w", padx=20, pady=(15, 5))
+        
+        # Описание команды
+        command_desc = ctk.CTkLabel(ram_card, 
+                               text="Показывает информацию об использовании оперативной памяти.",
+                               font=ctk.CTkFont(family="Segoe UI", size=14),
+                               text_color=self.secondary_text)
+        command_desc.pack(anchor="w", padx=20, pady=(0, 15))
+        
+        # Карточка команды /ping
+        ping_card = ctk.CTkFrame(scroll_container, fg_color=self.input_bg, corner_radius=10)
+        ping_card.pack(fill="x", pady=5)
+        
+        # Заголовок команды
+        command_title = ctk.CTkLabel(ping_card, 
+                                 text="/ping",
+                                 font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                                 text_color=self.primary_blue)
+        command_title.pack(anchor="w", padx=20, pady=(15, 5))
+        
+        # Описание команды
+        command_desc = ctk.CTkLabel(ping_card, 
+                               text="Проверяет скорость отклика и состояние подключения.",
+                               font=ctk.CTkFont(family="Segoe UI", size=14),
+                               text_color=self.secondary_text)
+        command_desc.pack(anchor="w", padx=20, pady=(0, 15))
+        
+        # Карточка команды /ip
+        ip_card = ctk.CTkFrame(scroll_container, fg_color=self.input_bg, corner_radius=10)
+        ip_card.pack(fill="x", pady=5)
+        
+        # Заголовок команды
+        command_title = ctk.CTkLabel(ip_card, 
+                                 text="/ip",
+                                 font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                                 text_color=self.primary_blue)
+        command_title.pack(anchor="w", padx=20, pady=(15, 5))
+        
+        # Описание команды
+        command_desc = ctk.CTkLabel(ip_card, 
+                               text="Показывает локальный и внешний IP-адрес с информацией о местоположении.",
+                               font=ctk.CTkFont(family="Segoe UI", size=14),
+                               text_color=self.secondary_text)
+        command_desc.pack(anchor="w", padx=20, pady=(0, 15))
+        
+        # 3. КАТЕГОРИЯ: УПРАВЛЕНИЕ ПРОЦЕССАМИ
+        create_category_header("УПРАВЛЕНИЕ ПРОЦЕССАМИ", "⚙️")
+        
+        # Карточка команды /ps
+        ps_card = ctk.CTkFrame(scroll_container, fg_color=self.input_bg, corner_radius=10)
+        ps_card.pack(fill="x", pady=5)
+        
+        # Заголовок команды
+        command_title = ctk.CTkLabel(ps_card, 
+                                 text="/ps",
+                                 font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                                 text_color=self.primary_blue)
+        command_title.pack(anchor="w", padx=20, pady=(15, 5))
+        
+        # Описание команды
+        command_desc = ctk.CTkLabel(ps_card, 
+                               text="Показывает список запущенных программ с информацией о нагрузке.",
+                               font=ctk.CTkFont(family="Segoe UI", size=14),
+                               text_color=self.secondary_text)
+        command_desc.pack(anchor="w", padx=20, pady=(0, 15))
+        
+        # Карточка команды /kill
+        kill_card = ctk.CTkFrame(scroll_container, fg_color=self.input_bg, corner_radius=10)
+        kill_card.pack(fill="x", pady=5)
+        
+        # Заголовок команды
+        command_title = ctk.CTkLabel(kill_card, 
+                                 text="/kill",
+                                 font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                                 text_color=self.primary_blue)
+        command_title.pack(anchor="w", padx=20, pady=(15, 5))
+        
+        # Описание команды
+        command_desc = ctk.CTkLabel(kill_card, 
+                               text="Закрывает указанную программу. Пример: /kill program.exe",
+                               font=ctk.CTkFont(family="Segoe UI", size=14),
+                               text_color=self.secondary_text)
+        command_desc.pack(anchor="w", padx=20, pady=(0, 15))
+        
+        # 4. КАТЕГОРИЯ: ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ
+        create_category_header("ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ", "🛠️")
+        
+        # Карточка команды /screenshot
+        screenshot_card = ctk.CTkFrame(scroll_container, fg_color=self.input_bg, corner_radius=10)
+        screenshot_card.pack(fill="x", pady=5)
+        
+        # Заголовок команды
+        command_title = ctk.CTkLabel(screenshot_card, 
+                                 text="/screenshot",
+                                 font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                                 text_color=self.primary_blue)
+        command_title.pack(anchor="w", padx=20, pady=(15, 5))
+        
+        # Описание команды
+        command_desc = ctk.CTkLabel(screenshot_card, 
+                               text="Создает скриншот экрана и определяет активное окно.",
+                               font=ctk.CTkFont(family="Segoe UI", size=14),
+                               text_color=self.secondary_text)
+        command_desc.pack(anchor="w", padx=20, pady=(0, 15))
         
         # Дополнительная информация
-        info_frame = ctk.CTkFrame(main_container, fg_color=self.input_bg, corner_radius=10)
+        info_frame = ctk.CTkFrame(scroll_container, fg_color=self.input_bg, corner_radius=10)
         info_frame.pack(fill="x", pady=(20, 5))
         
         # Заголовок информации
@@ -1420,6 +1822,8 @@ class NexusTGApp(ctk.CTk):
                 icon_text="🔧"
             )
             commands_button.pack(fill="x", padx=5, pady=2)
+            
+            # Удаляем кнопку "Настройки"
             
             # Кнопка "Добавить"
             add_button = self.create_menu_button(
@@ -1924,6 +2328,446 @@ class NexusTGApp(ctk.CTk):
         except Exception as e:
             # Если произошла ошибка, просто игнорируем
             print(f"Ошибка анимации логотипа на странице 'О программе': {str(e)}")
+
+    def show_settings_screen(self):
+        """Показывает экран настроек"""
+        # Очищаем предыдущее содержимое
+        for widget in self.main_frame.winfo_children():
+            widget.destroy()
+        
+        # Создаем верхнюю панель с возможностью вернуться
+        header_frame = ctk.CTkFrame(self.main_frame, fg_color=self.dark_bg, height=60)
+        header_frame.pack(fill="x", padx=20, pady=10)
+        
+        # Кнопка "Назад"
+        back_button = ctk.CTkButton(
+            header_frame,
+            text="← Назад",
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            fg_color=self.input_bg,
+            hover_color="#273245",
+            width=80,
+            height=32,
+            corner_radius=16,
+            command=self.create_operation_screen
+        )
+        back_button.pack(side="left", padx=(0, 10))
+        
+        # Заголовок
+        header_title = ctk.CTkLabel(
+            header_frame, 
+            text="Настройки",
+            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
+            text_color=self.text_color
+        )
+        header_title.pack(side="left")
+        
+        # Создаем область с прокруткой для содержимого
+        settings_frame = ctk.CTkScrollableFrame(self.main_frame, fg_color="transparent")
+        settings_frame.pack(expand=True, fill="both", padx=30, pady=(10, 20))
+        
+        # Получаем текущие настройки
+        try:
+            config_path = os.path.join('cfg', 'config.json')
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                current_token = config.get("bot_token", "")
+                current_owners = config.get("owner_ids", [])
+        except:
+            current_token = ""
+            current_owners = []
+        
+        # Сохраняем исходные настройки для сравнения позже
+        self.original_settings = {
+            "bot_token": current_token,
+            "owner_ids": current_owners.copy()
+        }
+        
+        # Подготавливаем весь интерфейс сразу
+        self.main_frame.update_idletasks()
+        
+        # Карточка с настройками бота
+        bot_card = ctk.CTkFrame(settings_frame, fg_color=self.input_bg, corner_radius=10)
+        bot_card.pack(fill="x", pady=(0, 15), padx=5)
+        
+        # Заголовок карточки
+        card_title = ctk.CTkLabel(
+            bot_card, 
+            text="🤖 Настройки Telegram бота",
+            font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+            text_color=self.text_color
+        )
+        card_title.pack(anchor="w", padx=20, pady=(15, 5))
+        
+        # Линия под заголовком
+        separator = ctk.CTkFrame(bot_card, height=1, fg_color="#2D374B")
+        separator.pack(fill="x", padx=20, pady=(0, 15))
+        
+        # Раздел Bot Token
+        token_section = ctk.CTkFrame(bot_card, fg_color="transparent")
+        token_section.pack(fill="x", pady=(0, 15), padx=20)
+        
+        # Заголовок раздела
+        token_title = ctk.CTkLabel(
+            token_section, 
+            text="Токен Telegram бота",
+            font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+            text_color=self.text_color
+        )
+        token_title.pack(anchor="w", pady=(0, 5))
+        
+        # Описание
+        token_desc = ctk.CTkLabel(
+            token_section, 
+            text="Токен для подключения к Telegram API. Можно получить у @BotFather.",
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            text_color=self.secondary_text,
+            wraplength=600,
+            justify="left"
+        )
+        token_desc.pack(anchor="w", pady=(0, 10))
+        
+        # Поле ввода токена с иконкой
+        token_input_frame = ctk.CTkFrame(token_section, fg_color="transparent")
+        token_input_frame.pack(fill="x")
+        
+        # Иконка ключа
+        key_icon_label = ctk.CTkLabel(
+            token_input_frame, 
+            text="🔑",
+            font=ctk.CTkFont(size=16),
+            width=30
+        )
+        key_icon_label.pack(side="left", padx=(0, 10))
+        
+        # Поле ввода токена
+        self.settings_token_entry = ctk.CTkEntry(
+            token_input_frame,
+            placeholder_text="Введите токен бота...",
+            width=450,
+            height=36,
+            border_width=1,
+            corner_radius=8,
+            fg_color=self.dark_bg,
+            border_color=self.input_border,
+            text_color=self.text_color,
+            state="readonly"  # Делаем поле только для чтения
+        )
+        self.settings_token_entry.pack(side="left", fill="x", expand=True)
+        if current_token:
+            self.settings_token_entry.configure(state="normal")  # Временно разрешаем редактирование
+            self.settings_token_entry.insert(0, current_token)
+            self.settings_token_entry.configure(state="readonly")  # Возвращаем только для чтения
+        
+        # Добавляем текст с пояснением, почему токен нельзя изменить
+        token_readonly_label = ctk.CTkLabel(
+            token_section, 
+            text="Токен бота защищен от изменений в целях безопасности",
+            font=ctk.CTkFont(family="Segoe UI", size=11, slant="italic"),
+            text_color="#F39C12",  # Оранжевый цвет для предупреждения
+            wraplength=600,
+            justify="left"
+        )
+        token_readonly_label.pack(anchor="w", pady=(5, 0))
+        
+        self.add_context_menu(self.settings_token_entry)
+        
+        # Раздел Owner IDs
+        owners_section = ctk.CTkFrame(bot_card, fg_color="transparent")
+        owners_section.pack(fill="x", pady=(0, 20), padx=20)
+        
+        # Заголовок раздела
+        owners_title = ctk.CTkLabel(
+            owners_section, 
+            text="ID владельцев",
+            font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+            text_color=self.text_color
+        )
+        owners_title.pack(anchor="w", pady=(0, 5))
+        
+        # Описание
+        owners_desc = ctk.CTkLabel(
+            owners_section, 
+            text="Telegram ID пользователей, которые могут управлять ботом (до 3 человек).",
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            text_color=self.secondary_text,
+            wraplength=600,
+            justify="left"
+        )
+        owners_desc.pack(anchor="w", pady=(0, 10))
+        
+        # Контейнер для полей ввода ID владельцев
+        self.settings_owners_container = ctk.CTkFrame(owners_section, fg_color="transparent")
+        self.settings_owners_container.pack(fill="x")
+        
+        # Список для отслеживания фреймов с полями владельцев
+        self.settings_owner_frames = []
+        
+        # Кнопка для добавления нового владельца
+        add_owner_button = ctk.CTkButton(
+            owners_section,
+            text="+ Добавить владельца",
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            fg_color=self.primary_blue,
+            hover_color="#1976D2",
+            width=160,
+            height=32,
+            corner_radius=16,
+            command=lambda: self.add_owner_field(add_owner_button)
+        )
+        
+        # Функция для удаления поля владельца
+        def remove_owner_field(frame):
+            if frame in self.settings_owner_frames:
+                self.settings_owner_frames.remove(frame)
+                frame.destroy()
+                
+                # Активируем кнопку добавления, если поля были удалены
+                if len(self.settings_owner_frames) < 3:
+                    add_owner_button.configure(state="normal", fg_color=self.primary_blue)
+        
+        # Добавляем существующих владельцев
+        for owner_id in current_owners:
+            self.add_owner_field(add_owner_button, owner_id, remove_owner_field)
+        
+        # Если нет полей, добавляем одно пустое
+        if not self.settings_owner_frames:
+            self.add_owner_field(add_owner_button, "", remove_owner_field)
+            
+        # Добавляем кнопку после того, как поля созданы
+        add_owner_button.pack(anchor="w", pady=(10, 0))
+        
+        # Если уже максимальное количество владельцев
+        if len(self.settings_owner_frames) >= 3:
+            add_owner_button.configure(state="disabled", fg_color="#3A3A3A")
+        
+        # Карточка с настройками автозапуска
+        autostart_card = ctk.CTkFrame(settings_frame, fg_color=self.input_bg, corner_radius=10)
+        autostart_card.pack(fill="x", pady=(0, 15), padx=5)
+        
+        # Заголовок карточки
+        autostart_title = ctk.CTkLabel(
+            autostart_card, 
+            text="⚙️ Дополнительные настройки",
+            font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+            text_color=self.text_color
+        )
+        autostart_title.pack(anchor="w", padx=20, pady=(15, 5))
+        
+        # Линия под заголовком
+        separator2 = ctk.CTkFrame(autostart_card, height=1, fg_color="#2D374B")
+        separator2.pack(fill="x", padx=20, pady=(0, 15))
+        
+        # Переключатель автоматического перезапуска
+        auto_restart_var = tk.BooleanVar(value=True)
+        self.auto_restart_checkbox = ctk.CTkCheckBox(
+            autostart_card,
+            text="Автоматически применять изменения",
+            font=ctk.CTkFont(family="Segoe UI", size=14),
+            variable=auto_restart_var,
+            checkbox_width=24,
+            checkbox_height=24,
+            corner_radius=5,
+            fg_color=self.primary_blue,
+            hover_color="#1976D2",
+            border_color=self.input_border
+        )
+        self.auto_restart_checkbox.pack(anchor="w", padx=20, pady=(0, 10))
+        
+        # Описание автоматического перезапуска
+        auto_restart_desc = ctk.CTkLabel(
+            autostart_card, 
+            text="Если выбрано, бот будет автоматически перезапущен при изменении настроек.",
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            text_color=self.secondary_text,
+            wraplength=600,
+            justify="left"
+        )
+        auto_restart_desc.pack(anchor="w", padx=20, pady=(0, 15))
+        
+        # Кнопки внизу с эффектом тени
+        buttons_container = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        buttons_container.pack(fill="x", pady=(10, 10), padx=5)
+        
+        # Улучшенная кнопка сохранения настроек
+        save_button = ctk.CTkButton(
+            buttons_container,
+            text="Сохранить настройки",
+            font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+            fg_color=self.accent_green,
+            hover_color="#06A66B",  # Чуть темнее при наведении
+            text_color="#FFFFFF",
+            border_width=0,
+            width=220,
+            height=42,
+            corner_radius=10,
+            command=lambda: self.save_settings(auto_restart_var.get())
+        )
+        save_button.pack(side="left", padx=(0, 15))
+        
+        # Изображение галочки, встроенное справа от текста
+        icon_label = ctk.CTkLabel(
+            save_button, 
+            text="✓", 
+            font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+            text_color="#FFFFFF",
+            width=10
+        )
+        icon_label.place(relx=0.12, rely=0.5, anchor="center")
+        
+        # Кнопка отмены
+        cancel_button = ctk.CTkButton(
+            buttons_container,
+            text="Отмена",
+            font=ctk.CTkFont(family="Segoe UI", size=14),
+            fg_color=self.input_bg,
+            hover_color="#273245",
+            width=120,
+            height=44,
+            corner_radius=22,
+            command=self.create_operation_screen
+        )
+        cancel_button.pack(side="left")
+        
+        # Обновляем экран
+        self.update_idletasks()
+
+    def add_owner_field(self, add_button, owner_id="", remove_callback=None):
+        """Добавляет поле для ввода ID владельца"""
+        if len(self.settings_owner_frames) >= 3:
+            return  # Максимум 3 владельца
+        
+        # Создаем фрейм для поля и кнопки
+        owner_frame = ctk.CTkFrame(self.settings_owners_container, fg_color="transparent")
+        owner_frame.pack(fill="x", pady=(0, 5))
+        self.settings_owner_frames.append(owner_frame)
+        
+        # Иконка пользователя
+        user_icon_label = ctk.CTkLabel(
+            owner_frame, 
+            text="👤",
+            font=ctk.CTkFont(size=16),
+            width=30
+        )
+        user_icon_label.pack(side="left", padx=(0, 10))
+        
+        # Поле ввода ID
+        owner_entry = ctk.CTkEntry(
+            owner_frame,
+            placeholder_text="ID владельца...",
+            width=350,
+            height=36,
+            border_width=1,
+            corner_radius=8,
+            fg_color=self.dark_bg,
+            border_color=self.input_border,
+            text_color=self.text_color
+        )
+        owner_entry.pack(side="left", padx=(0, 10), fill="x", expand=True)
+        if owner_id:
+            owner_entry.insert(0, owner_id)
+        
+        self.add_context_menu(owner_entry)
+        
+        # Кнопка удаления
+        remove_button = ctk.CTkButton(
+            owner_frame,
+            text="✕",
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            fg_color="#E74C3C",
+            hover_color="#C0392B",
+            width=36,
+            height=36,
+            corner_radius=8,
+            command=lambda: remove_callback(owner_frame) if remove_callback else None
+        )
+        remove_button.pack(side="left")
+        
+        # Проверяем, нужно ли скрыть кнопку добавления
+        if len(self.settings_owner_frames) >= 3 and add_button:
+            add_button.configure(state="disabled", fg_color="#3A3A3A")
+    
+    def save_settings(self, auto_restart=True):
+        """Сохраняет настройки и перезапускает бота, если выбрано"""
+        try:
+            # Получаем все owner_ids из полей ввода, пропуская пустые
+            all_owner_fields = self.get_all_owner_fields()
+            owner_ids = [field.get().strip() for field in all_owner_fields if field.get().strip()]
+            
+            # Проверяем, что есть хотя бы один владелец
+            if not owner_ids:
+                self.show_error("Необходимо указать хотя бы одного владельца!")
+                return False
+            
+            # Получаем токен
+            bot_token = self.token_entry.get().strip()
+            
+            # Проверяем, что токен указан
+            if not bot_token:
+                self.show_error("Необходимо указать токен бота!")
+                return False
+                
+            # Создаем/обновляем конфигурацию
+            from src.config import Config
+            config = Config()
+            config.bot_token = bot_token
+            config.owner_ids = owner_ids
+            
+            # Сохраняем конфигурацию в файл
+            config.save_config()
+            
+            # Обновляем локальные переменные
+            self.bot_token = bot_token
+            self.owner_ids = owner_ids
+            
+            # Показываем уведомление об успешном сохранении
+            success_frame = ctk.CTkFrame(self, fg_color=self.dark_bg, corner_radius=10, border_width=1, border_color=self.accent_green)
+            success_frame.place(relx=0.5, rely=0.9, anchor="center", width=400)
+            
+            success_label = ctk.CTkLabel(success_frame, 
+                                     text="✅ Настройки успешно сохранены!",
+                                     font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"), 
+                                     text_color=self.accent_green)
+            success_label.pack(pady=10, padx=20)
+            
+            # Перезапускаем бота, если выбран auto_restart
+            if auto_restart:
+                # Создаем временную метку, чтобы избежать мигания
+                restart_label = ctk.CTkLabel(
+                    success_frame,
+                    text="⟳ Перезапуск бота...",
+                    font=ctk.CTkFont(family="Segoe UI", size=12),
+                    text_color=self.secondary_text
+                )
+                restart_label.pack(pady=(0, 10), padx=20)
+                
+                # Обновляем UI, чтобы показать сообщение перед перезапуском
+                self.update()
+                
+                # Запускаем перезапуск в отдельном потоке
+                threading.Thread(target=self._restart_after_save, daemon=True).start()
+            
+            # Скрываем сообщение через 3 секунды
+            self.after(3000, lambda: success_frame.destroy())
+            
+            return True
+        except Exception as e:
+            error_msg = f"Ошибка при сохранении настроек: {str(e)}"
+            self.show_error(error_msg)
+            return False
+    
+    def _restart_after_save(self):
+        """Выполняет перезапуск бота после сохранения настроек с задержкой"""
+        try:
+            # Небольшая задержка для стабилизации
+            time.sleep(1.5)
+            
+            # Используем tkinter's after для вызова из главного потока
+            self.after(0, self._restart_bot_simple)
+        except Exception as e:
+            self.add_log_message(f"Ошибка при перезапуске после сохранения: {str(e)}")
+            # В случае ошибки все равно возвращаемся к основному экрану
+            self.after(0, self.create_operation_screen)
 
 if __name__ == "__main__":
     app = NexusTGApp()
