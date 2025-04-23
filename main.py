@@ -9,7 +9,6 @@ import json
 import asyncio
 import sys
 import webbrowser
-# Добавляем необходимые библиотеки для функции скриншота
 import subprocess
 import pyautogui
 from PIL import Image
