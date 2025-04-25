@@ -1,16 +1,11 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+# Модуль для хранения и управления конфигурациями бота.
 
-"""
-Модуль для хранения и управления конфигурациями бота.
-"""
 
 import os
 import json
 import logging
 from typing import List, Dict, Any, Optional
 
-# Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -18,7 +13,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class Config:
-    """Класс для хранения конфигурации бота"""
     
     def __init__(self, token: str, owner_ids: List[str]):
         """
@@ -95,7 +89,6 @@ class Config:
             bool: True при успешном сохранении, False при ошибке
         """
         try:
-            # Создаем директорию, если она не существует
             directory = os.path.dirname(file_path)
             if directory and not os.path.exists(directory):
                 os.makedirs(directory)

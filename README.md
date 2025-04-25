@@ -20,3 +20,10 @@ NexusTG/
 ├── README.md            # Документация проекта
 └── TODO.md              # План разработки
 ```
+
+# Программа 
+![программа](cfg/content/NexusTG.png)
+
+
+# Бот
+![бот](cfg/content/bot.png)
